@@ -2,6 +2,8 @@
 
 This document serves as a log of the progress and knowledge I gained while working on GPU programming and studying the **PMPP (Parallel Programming and Optimization)** book.
 
+🌐 **View the interactive website**: [GitHub Pages Site](https://douyixuan.github.io/gpu-kernels/) *(coming soon after enabling GitHub Pages)*
+
 Mentor: https://github.com/hkproj/
 
 
