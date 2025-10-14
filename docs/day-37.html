@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Day 37 - GPU Kernels Learning Journey</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            background: #f5f5f5;
+        }
+        
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 2rem 1rem;
+            text-align: center;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        
+        .header h1 {
+            font-size: 2.5rem;
+            margin-bottom: 0.5rem;
+        }
+        
+        .header .subtitle {
+            font-size: 1.1rem;
+            opacity: 0.9;
+        }
+        
+        .nav {
+            background: white;
+            padding: 1rem;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+        
+        .nav-content {
+            max-width: 1200px;
+            margin: 0 auto;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 1rem;
+        }
+        
+        .nav a {
+            color: #667eea;
+            text-decoration: none;
+            padding: 0.5rem 1rem;
+            border-radius: 5px;
+            transition: all 0.3s;
+        }
+        
+        .nav a:hover {
+            background: #667eea;
+            color: white;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 2rem auto;
+            padding: 0 1rem;
+        }
+        
+        .description {
+            background: white;
+            padding: 2rem;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+            margin-bottom: 2rem;
+        }
+        
+        .description h2 {
+            color: #667eea;
+            margin-bottom: 1rem;
+            border-bottom: 2px solid #667eea;
+            padding-bottom: 0.5rem;
+        }
+        
+        .description pre {
+            background: #f5f5f5;
+            padding: 1rem;
+            border-radius: 5px;
+            overflow-x: auto;
+        }
+        
+        .file-section {
+            background: white;
+            margin-bottom: 2rem;
+            border-radius: 10px;
+            overflow: hidden;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+        }
+        
+        .file-section h3 {
+            background: #667eea;
+            color: white;
+            padding: 1rem;
+            margin: 0;
+        }
+        
+        .file-section pre {
+            margin: 0;
+            border-radius: 0;
+        }
+        
+        .file-section code {
+            display: block;
+            padding: 1.5rem;
+            max-height: 600px;
+            overflow: auto;
+        }
+        
+        .no-files {
+            text-align: center;
+            padding: 3rem;
+            color: #999;
+            font-style: italic;
+        }
+        
+        @media (max-width: 768px) {
+            .header h1 {
+                font-size: 1.8rem;
+            }
+            
+            .nav-content {
+                flex-direction: column;
+                text-align: center;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>Day 37</h1>
+        <div class="subtitle">GPU Kernels Learning Journey</div>
+    </div>
+    
+    <nav class="nav">
+        <div class="nav-content">
+            <a href="index.html">← Back to Index</a>
+            <div>
+                <a href="day-36.html">← Day 36</a>
+                <a href="day-38.html">Day 38 →</a>
+            </div>
+        </div>
+    </nav>
+    
+    <div class="container">
+        <div class="description">
+            <h2>Description</h2>
+            <div class="desc-content">
+### Files: `cuda_ray_tracing.cu`
+Today, I implemented a basic ray tracing algorithm in CUDA to simulate optical phenomena. The kernel casts rays from a virtual camera and computes intersections with a sphere, coloring pixels based on the hit points.
+            </div>
+        </div>
+        
+        <h2 style="margin-bottom: 1rem; color: #667eea;">Code Files</h2>
+
+    <div class="file-section">
+        <h3>cuda_ray_tracing.cu</h3>
+        <pre><code class="language-cuda">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+#include &lt;cuda_runtime.h&gt;
+
+#define WIDTH 1024
+#define HEIGHT 768
+#define SPHERE_RADIUS 0.5f
+#define SPHERE_CENTER_X 0.0f
+#define SPHERE_CENTER_Y 0.0f
+#define SPHERE_CENTER_Z -1.5f
+
+struct Vec3 {
+    float x, y, z;
+    
+    __device__ Vec3() : x(0), y(0), z(0) {}
+    __device__ Vec3(float a, float b, float c) : x(a), y(b), z(c) {}
+
+    __device__ Vec3 operator+(const Vec3 &amp;b) const { return Vec3(x + b.x, y + b.y, z + b.z); }
+    __device__ Vec3 operator-(const Vec3 &amp;b) const { return Vec3(x - b.x, y - b.y, z - b.z); }
+    __device__ Vec3 operator*(float s) const { return Vec3(x * s, y * s, z * s); }
+    __device__ float dot(const Vec3 &amp;b) const { return x * b.x + y * b.y + z * b.z; }
+    __device__ Vec3 normalize() const {
+        float len = sqrtf(x*x + y*y + z*z);
+        return Vec3(x/len, y/len, z/len);
+    }
+};
+
+// CUDA kernel to trace rays
+__global__ void render(unsigned char *image) {
+    int x = blockIdx.x * blockDim.x + threadIdx.x;
+    int y = blockIdx.y * blockDim.y + threadIdx.y;
+
+    if (x &gt;= WIDTH || y &gt;= HEIGHT) return;
+
+    int idx = (y * WIDTH + x) * 3; // Each pixel has 3 color channels (RGB)
+
+    // Convert pixel to normalized screen space (-1 to 1)
+    float u = (2.0f * x / WIDTH - 1.0f);
+    float v = (2.0f * y / HEIGHT - 1.0f);
+
+    // Ray origin (camera at (0,0,0))
+    Vec3 ray_origin(0.0f, 0.0f, 0.0f);
+    // Ray direction (from camera to screen)
+    Vec3 ray_dir(u, v, -1.0f);
+    ray_dir = ray_dir.normalize();
+
+    // Sphere properties
+    Vec3 sphere_center(SPHERE_CENTER_X, SPHERE_CENTER_Y, SPHERE_CENTER_Z);
+    
+    // Compute ray-sphere intersection (quadratic equation)
+    Vec3 oc = ray_origin - sphere_center;
+    float a = ray_dir.dot(ray_dir);
+    float b = 2.0f * oc.dot(ray_dir);
+    float c = oc.dot(oc) - SPHERE_RADIUS * SPHERE_RADIUS;
+    float discriminant = b * b - 4 * a * c;
+
+    if (discriminant &gt;= 0) {
+        // Compute the nearest intersection
+        float t = (-b - sqrtf(discriminant)) / (2.0f * a);
+        Vec3 hit_point = ray_origin + ray_dir * t;
+        Vec3 normal = (hit_point - sphere_center).normalize();
+
+        // Simple diffuse shading based on light direction
+        Vec3 light_dir(1.0f, 1.0f, -1.0f);
+        light_dir = light_dir.normalize();
+        float intensity = fmaxf(0.0f, normal.dot(light_dir));
+
+        // Color the sphere (red tone)
+        image[idx] = (unsigned char)(255 * intensity);
+        image[idx + 1] = (unsigned char)(50 * intensity);
+        image[idx + 2] = (unsigned char)(50 * intensity);
+    } else {
+        // Background color (black)
+        image[idx] = 0;
+        image[idx + 1] = 0;
+        image[idx + 2] = 0;
+    }
+}
+
+// Save image as PPM
+void save_image(unsigned char *image) {
+    FILE *f = fopen("output.ppm", "wb");
+    fprintf(f, "P6\n%d %d\n255\n", WIDTH, HEIGHT);
+    fwrite(image, 1, WIDTH * HEIGHT * 3, f);
+    fclose(f);
+}
+
+int main() {
+    // Allocate memory for image
+    unsigned char *d_image, *h_image;
+    size_t image_size = WIDTH * HEIGHT * 3;
+    cudaMalloc((void **)&amp;d_image, image_size);
+    h_image = (unsigned char *)malloc(image_size);
+
+    // Launch CUDA kernel
+    dim3 threadsPerBlock(16, 16);
+    dim3 numBlocks((WIDTH + 15) / 16, (HEIGHT + 15) / 16);
+    render&lt;&lt;&lt;numBlocks, threadsPerBlock&gt;&gt;&gt;(d_image);
+    cudaMemcpy(h_image, d_image, image_size, cudaMemcpyDeviceToHost);
+
+    // Save image
+    save_image(h_image);
+
+    // Cleanup
+    cudaFree(d_image);
+    free(h_image);
+
+    printf("Image saved as output.ppm\n");
+    return 0;
+}
+</code></pre>
+    </div>
+
+    </div>
+    
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-c.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-cpp.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-python.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-markdown.min.js"></script>
+</body>
+</html>

@@ -1,0 +1,506 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Day 71 - GPU Kernels Learning Journey</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            background: #f5f5f5;
+        }
+        
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 2rem 1rem;
+            text-align: center;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        
+        .header h1 {
+            font-size: 2.5rem;
+            margin-bottom: 0.5rem;
+        }
+        
+        .header .subtitle {
+            font-size: 1.1rem;
+            opacity: 0.9;
+        }
+        
+        .nav {
+            background: white;
+            padding: 1rem;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+        
+        .nav-content {
+            max-width: 1200px;
+            margin: 0 auto;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 1rem;
+        }
+        
+        .nav a {
+            color: #667eea;
+            text-decoration: none;
+            padding: 0.5rem 1rem;
+            border-radius: 5px;
+            transition: all 0.3s;
+        }
+        
+        .nav a:hover {
+            background: #667eea;
+            color: white;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 2rem auto;
+            padding: 0 1rem;
+        }
+        
+        .description {
+            background: white;
+            padding: 2rem;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+            margin-bottom: 2rem;
+        }
+        
+        .description h2 {
+            color: #667eea;
+            margin-bottom: 1rem;
+            border-bottom: 2px solid #667eea;
+            padding-bottom: 0.5rem;
+        }
+        
+        .description pre {
+            background: #f5f5f5;
+            padding: 1rem;
+            border-radius: 5px;
+            overflow-x: auto;
+        }
+        
+        .file-section {
+            background: white;
+            margin-bottom: 2rem;
+            border-radius: 10px;
+            overflow: hidden;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+        }
+        
+        .file-section h3 {
+            background: #667eea;
+            color: white;
+            padding: 1rem;
+            margin: 0;
+        }
+        
+        .file-section pre {
+            margin: 0;
+            border-radius: 0;
+        }
+        
+        .file-section code {
+            display: block;
+            padding: 1.5rem;
+            max-height: 600px;
+            overflow: auto;
+        }
+        
+        .no-files {
+            text-align: center;
+            padding: 3rem;
+            color: #999;
+            font-style: italic;
+        }
+        
+        @media (max-width: 768px) {
+            .header h1 {
+                font-size: 1.8rem;
+            }
+            
+            .nav-content {
+                flex-direction: column;
+                text-align: center;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>Day 71</h1>
+        <div class="subtitle">GPU Kernels Learning Journey</div>
+    </div>
+    
+    <nav class="nav">
+        <div class="nav-content">
+            <a href="index.html">← Back to Index</a>
+            <div>
+                <a href="day-70.html">← Day 70</a>
+                <a href="day-72.html">Day 72 →</a>
+            </div>
+        </div>
+    </nav>
+    
+    <div class="container">
+        <div class="description">
+            <h2>Description</h2>
+            <div class="desc-content">
+### Files: `jsd_cuda.cu`
+In this implementation, I developed a CUDA C++ kernel for the generalized Jensen-Shannon Divergence (JSD) loss, including both forward and backward passes, entirely in CUDA.
+The GPU kernel processes each row of the input matrix with shared-memory reductions for numerical stability and handles different cases for beta values (forward KL, reverse KL, and a mixed case), while a custom reduction kernel sums the per-element losses to obtain a scalar output. Additionally, a CPU version of the forward pass is provided using nested loops for benchmarking, and execution times for both GPU (measured with CUDA events) and CPU (using C++ chrono) are compared to showcase the performance gains achieved on the GPU.
+            </div>
+        </div>
+        
+        <h2 style="margin-bottom: 1rem; color: #667eea;">Code Files</h2>
+
+    <div class="file-section">
+        <h3>jsd_cuda.cu</h3>
+        <pre><code class="language-cuda">#include &lt;cuda_runtime.h&gt;
+#include &lt;cmath&gt;
+#include &lt;cstdio&gt;
+#include &lt;chrono&gt;
+#include &lt;algorithm&gt;
+
+#define MAX_FUSED_SIZE 65536
+
+int next_power_of_2(int n) {
+    int p = 1;
+    while (p &lt; n) p *= 2;
+    return p;
+}
+
+__global__ void jsd_kernel(
+    const float* __restrict__ X, int X_stride,
+    const float* __restrict__ Y, int Y_stride,
+    float* __restrict__ loss, int loss_stride,
+    float* __restrict__ dX, int dX_stride,
+    const int* __restrict__ labels,
+    float beta,
+    int n_non_ignore,
+    int ignore_index,
+    int n_cols,
+    bool has_label)
+{
+    int row = blockIdx.x;
+    const float* X_row = X + row * X_stride;
+    const float* Y_row = Y + row * Y_stride;
+    float* loss_row = loss + row * loss_stride;
+    float* dX_row = dX + row * dX_stride;
+
+    if (has_label) {
+        int label = labels[row];
+        if (label == ignore_index) {
+            for (int col = threadIdx.x; col &lt; n_cols; col += blockDim.x) {
+                dX_row[col] = 0.0f;
+            }
+            return;
+        }
+    }
+
+    for (int i = 0; i &lt; n_cols; i += blockDim.x) {
+        int idx = i + threadIdx.x;
+        float x_val = (idx &lt; n_cols) ? X_row[idx] : -INFINITY;
+        float y_val = (idx &lt; n_cols) ? Y_row[idx] : -INFINITY;
+
+        float max_val = -INFINITY;
+        extern __shared__ float sdata[];
+        if (beta == 0.0f) {
+            sdata[threadIdx.x] = y_val;
+        } else if (beta == 1.0f) {
+            sdata[threadIdx.x] = x_val;
+        } else {
+            sdata[threadIdx.x] = fmaxf(x_val, y_val);
+        }
+        __syncthreads();
+
+        for (int offset = blockDim.x / 2; offset &gt; 0; offset /= 2) {
+            if (threadIdx.x &lt; offset) {
+                sdata[threadIdx.x] = fmaxf(sdata[threadIdx.x], sdata[threadIdx.x + offset]);
+            }
+            __syncthreads();
+        }
+        max_val = sdata[0];
+
+        float l = 0.0f;
+        float dx = 0.0f;
+        if (beta == 0.0f) {
+            float y_shifted = y_val - max_val;
+            float y_prob = expf(y_shifted) * expf(max_val); 
+            l = y_prob * (y_val - x_val);
+            dx = -y_prob;
+        }
+        else if (beta == 1.0f) {
+            float x_shifted = x_val - max_val;
+            float x_prob = expf(x_shifted) * expf(max_val); 
+            l = x_prob * (x_val - y_val);
+            dx = l + x_prob;
+        }
+        else {
+            float x_shifted = x_val - max_val;
+            float y_shifted = y_val - max_val;
+            float exp_max = expf(max_val);
+            float Q = expf(x_shifted) * exp_max; 
+            float P = expf(y_shifted) * exp_max; 
+            float beta_P = beta * P;
+            float one_minus_beta_Q = (1.0f - beta) * Q;
+            float M = beta_P + one_minus_beta_Q;
+            float log_M = logf(M);
+            l = beta_P * y_val + one_minus_beta_Q * x_val - M * log_M;
+            dx = one_minus_beta_Q * (x_val - log_M);
+        }
+        float scale = 1.0f / n_non_ignore;
+        l *= scale;
+        dx *= scale;
+
+        if (idx &lt; n_cols) {
+            loss_row[idx] = l;
+            dX_row[idx] = dx;
+        }
+        __syncthreads();  
+    }
+}
+
+void jsd_forward(
+    const float* d_input,
+    const float* d_target,
+    const int* d_shift_labels,  
+    float beta,
+    int ignore_index,
+    bool has_label,
+    int BT,
+    int V,
+    float* d_loss,
+    float* d_dX,
+    int n_non_ignore)
+{
+    int blockSize = next_power_of_2(V);
+    if (blockSize &gt; MAX_FUSED_SIZE) {
+        blockSize = MAX_FUSED_SIZE;
+    }
+    size_t shmem_bytes = blockSize * sizeof(float);
+    dim3 grid(BT);
+    dim3 block(blockSize);
+    jsd_kernel&lt;&lt;&lt;grid, block, shmem_bytes&gt;&gt;&gt;(
+        d_input, V,      
+        d_target, V,
+        d_loss, V,
+        d_dX, V,
+        d_shift_labels,
+        beta,
+        n_non_ignore,
+        ignore_index,
+        V,
+        has_label);
+    cudaError_t err = cudaGetLastError();
+    if (err != cudaSuccess) {
+        printf("jsd_kernel launch error: %s\n", cudaGetErrorString(err));
+    }
+}
+
+__global__ void jsd_backward_kernel(const float* dX_in, float* dX_out, float grad_output, int N) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx &lt; N) {
+        dX_out[idx] = (grad_output == 1.0f) ? dX_in[idx] : grad_output * dX_in[idx];
+    }
+}
+
+void jsd_backward(
+    const float* d_dX,  
+    float* d_dX_out,     
+    float grad_output,
+    int total_elements)  
+{
+    int threads = 256;
+    int blocks = (total_elements + threads - 1) / threads;
+    jsd_backward_kernel&lt;&lt;&lt;blocks, threads&gt;&gt;&gt;(d_dX, d_dX_out, grad_output, total_elements);
+    cudaError_t err = cudaGetLastError();
+    if (err != cudaSuccess) {
+        printf("jsd_backward_kernel launch error: %s\n", cudaGetErrorString(err));
+    }
+}
+
+__global__ void reduce_sum_kernel(const float* d_in, float* d_out, int N) {
+    extern __shared__ float sdata[];
+    unsigned int tid = threadIdx.x;
+    unsigned int idx = blockIdx.x * blockDim.x * 2 + threadIdx.x;
+    float sum = 0.0f;
+    if (idx &lt; N) {
+        sum = d_in[idx];
+        if (idx + blockDim.x &lt; N)
+            sum += d_in[idx + blockDim.x];
+    }
+    sdata[tid] = sum;
+    __syncthreads();
+
+    for (unsigned int s = blockDim.x / 2; s &gt; 0; s &gt;&gt;= 1) {
+        if (tid &lt; s)
+            sdata[tid] += sdata[tid + s];
+        __syncthreads();
+    }
+
+    if (tid == 0)
+        d_out[blockIdx.x] = sdata[0];
+}
+
+float reduce_loss(float* d_in, int N) {
+    int threads = 256;
+    int blocks = (N + threads * 2 - 1) / (threads * 2);
+    float* d_partial;
+    cudaMalloc(&amp;d_partial, blocks * sizeof(float));
+
+    int current_N = N;
+    float sum = 0.0f;
+    float* d_current = d_in;
+    while (true) {
+        size_t shmem_bytes = threads * sizeof(float);
+        reduce_sum_kernel&lt;&lt;&lt;blocks, threads, shmem_bytes&gt;&gt;&gt;(d_current, d_partial, current_N);
+        cudaDeviceSynchronize();
+
+        if (blocks == 1) {
+            cudaMemcpy(&amp;sum, d_partial, sizeof(float), cudaMemcpyDeviceToHost);
+            break;
+        }
+        current_N = blocks;
+        blocks = (current_N + threads * 2 - 1) / (threads * 2);
+        d_current = d_partial;
+    }
+    cudaFree(d_partial);
+    return sum;
+}
+
+float cpu_jsd_forward(const float* h_input, const float* h_target, int BT, int V,
+                      float beta, int ignore_index, bool has_label, int n_non_ignore,
+                      float* h_dX)
+{
+    float total_loss = 0.0f;
+    float scale = 1.0f / n_non_ignore;
+    for (int row = 0; row &lt; BT; row++) {
+        float row_max = -INFINITY;
+        for (int col = 0; col &lt; V; col++) {
+            float x_val = h_input[row * V + col];
+            float y_val = h_target[row * V + col];
+            row_max = std::max(row_max, std::max(x_val, y_val));
+        }
+        for (int col = 0; col &lt; V; col++) {
+            float x_val = h_input[row * V + col];
+            float y_val = h_target[row * V + col];
+            float l = 0.0f;
+            float dx = 0.0f;
+            if (beta == 0.0f) {
+                float y_prob = std::exp(y_val); 
+                l = y_prob * (y_val - x_val);
+                dx = -y_prob;
+            } else if (beta == 1.0f) {
+                float x_prob = std::exp(x_val);
+                l = x_prob * (x_val - y_val);
+                dx = l + x_prob;
+            } else {
+                float x_shifted = x_val - row_max;
+                float y_shifted = y_val - row_max;
+                float exp_max = std::exp(row_max);
+                float Q = std::exp(x_shifted) * exp_max;
+                float P = std::exp(y_shifted) * exp_max;
+                float beta_P = beta * P;
+                float one_minus_beta_Q = (1.0f - beta) * Q;
+                float M = beta_P + one_minus_beta_Q;
+                float log_M = std::log(M);
+                l = beta_P * y_val + one_minus_beta_Q * x_val - M * log_M;
+                dx = one_minus_beta_Q * (x_val - log_M);
+            }
+            l *= scale;
+            dx *= scale;
+            total_loss += l;
+            h_dX[row * V + col] = dx;
+        }
+    }
+    return total_loss;
+}
+
+int main() {
+    const int BT = 128;  
+    const int V = 2048;  
+    const int total = BT * V;
+    float beta = 0.5f;
+    int ignore_index = -100;
+    bool has_label = false;
+    int n_non_ignore = BT;
+
+    float* h_input = new float[total];
+    float* h_target = new float[total];
+    float* h_dX_cpu = new float[total];
+    for (int i = 0; i &lt; total; i++) {
+        h_input[i] = 0.1f;  
+        h_target[i] = 0.2f; 
+    }
+
+    float *d_input, *d_target, *d_loss, *d_dX;
+    cudaMalloc(&amp;d_input, total * sizeof(float));
+    cudaMalloc(&amp;d_target, total * sizeof(float));
+    cudaMalloc(&amp;d_loss, total * sizeof(float));
+    cudaMalloc(&amp;d_dX, total * sizeof(float));
+
+    cudaMemcpy(d_input, h_input, total * sizeof(float), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_target, h_target, total * sizeof(float), cudaMemcpyHostToDevice);
+
+    cudaEvent_t start, stop;
+    cudaEventCreate(&amp;start);
+    cudaEventCreate(&amp;stop);
+
+    cudaEventRecord(start);
+    jsd_forward(d_input, d_target, nullptr, beta, ignore_index, has_label, BT, V, d_loss, d_dX, n_non_ignore);
+    cudaDeviceSynchronize();
+    cudaEventRecord(stop);
+    cudaEventSynchronize(stop);
+    float gpu_ms = 0;
+    cudaEventElapsedTime(&amp;gpu_ms, start, stop);
+
+    float total_loss_gpu = reduce_loss(d_loss, total);
+
+    auto cpu_start = std::chrono::high_resolution_clock::now();
+    float total_loss_cpu = cpu_jsd_forward(h_input, h_target, BT, V, beta, ignore_index, has_label, n_non_ignore, h_dX_cpu);
+    auto cpu_end = std::chrono::high_resolution_clock::now();
+    std::chrono::duration&lt;double, std::milli&gt; cpu_duration = cpu_end - cpu_start;
+
+    printf("GPU loss: %f, GPU time: %f ms\n", total_loss_gpu, gpu_ms);
+    printf("CPU loss: %f, CPU time: %f ms\n", total_loss_cpu, cpu_duration.count());
+
+    delete[] h_input;
+    delete[] h_target;
+    delete[] h_dX_cpu;
+    cudaFree(d_input);
+    cudaFree(d_target);
+    cudaFree(d_loss);
+    cudaFree(d_dX);
+    cudaEventDestroy(start);
+    cudaEventDestroy(stop);
+    return 0;
+}</code></pre>
+    </div>
+
+    </div>
+    
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-c.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-cpp.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-python.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-markdown.min.js"></script>
+</body>
+</html>

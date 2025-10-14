@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Day 46 - GPU Kernels Learning Journey</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            background: #f5f5f5;
+        }
+        
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 2rem 1rem;
+            text-align: center;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        
+        .header h1 {
+            font-size: 2.5rem;
+            margin-bottom: 0.5rem;
+        }
+        
+        .header .subtitle {
+            font-size: 1.1rem;
+            opacity: 0.9;
+        }
+        
+        .nav {
+            background: white;
+            padding: 1rem;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+        
+        .nav-content {
+            max-width: 1200px;
+            margin: 0 auto;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 1rem;
+        }
+        
+        .nav a {
+            color: #667eea;
+            text-decoration: none;
+            padding: 0.5rem 1rem;
+            border-radius: 5px;
+            transition: all 0.3s;
+        }
+        
+        .nav a:hover {
+            background: #667eea;
+            color: white;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 2rem auto;
+            padding: 0 1rem;
+        }
+        
+        .description {
+            background: white;
+            padding: 2rem;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+            margin-bottom: 2rem;
+        }
+        
+        .description h2 {
+            color: #667eea;
+            margin-bottom: 1rem;
+            border-bottom: 2px solid #667eea;
+            padding-bottom: 0.5rem;
+        }
+        
+        .description pre {
+            background: #f5f5f5;
+            padding: 1rem;
+            border-radius: 5px;
+            overflow-x: auto;
+        }
+        
+        .file-section {
+            background: white;
+            margin-bottom: 2rem;
+            border-radius: 10px;
+            overflow: hidden;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+        }
+        
+        .file-section h3 {
+            background: #667eea;
+            color: white;
+            padding: 1rem;
+            margin: 0;
+        }
+        
+        .file-section pre {
+            margin: 0;
+            border-radius: 0;
+        }
+        
+        .file-section code {
+            display: block;
+            padding: 1.5rem;
+            max-height: 600px;
+            overflow: auto;
+        }
+        
+        .no-files {
+            text-align: center;
+            padding: 3rem;
+            color: #999;
+            font-style: italic;
+        }
+        
+        @media (max-width: 768px) {
+            .header h1 {
+                font-size: 1.8rem;
+            }
+            
+            .nav-content {
+                flex-direction: column;
+                text-align: center;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>Day 46</h1>
+        <div class="subtitle">GPU Kernels Learning Journey</div>
+    </div>
+    
+    <nav class="nav">
+        <div class="nav-content">
+            <a href="index.html">← Back to Index</a>
+            <div>
+                <a href="day-45.html">← Day 45</a>
+                <a href="day-47.html">Day 47 →</a>
+            </div>
+        </div>
+    </nav>
+    
+    <div class="container">
+        <div class="description">
+            <h2>Description</h2>
+            <div class="desc-content">
+### Files:`Muon.cu` 
+
+I implemented the Muon optimization algorithm in CUDA, leveraging GPU parallelism for efficient gradient computation and parameter updates. The implementation follows the algorithm's key steps: computing the gradient, applying momentum-based accumulation, approximating the inverse square root using the Newton-Schulz method, and updating the parameters. The CUDA kernel efficiently handles element-wise operations on tensors, ensuring high-performance execution. By utilizing shared memory and optimized matrix operations, the implementation accelerates the Muon algorithm, making it suitable for large-scale machine learning tasks.
+            </div>
+        </div>
+        
+        <h2 style="margin-bottom: 1rem; color: #667eea;">Code Files</h2>
+
+    <div class="file-section">
+        <h3>Muon.cu</h3>
+        <pre><code class="language-cuda">#include &lt;torch/extension.h&gt;
+#include &lt;cuda.h&gt;
+#include &lt;cuda_runtime.h&gt;
+
+#define BLOCK_SIZE 16
+
+__global__ void matmul_kernel(float* A, float* B, float* C, int M, int N, int K) {
+    int row = blockIdx.y * blockDim.y + threadIdx.y;
+    int col = blockIdx.x * blockDim.x + threadIdx.x;
+    
+    if (row &lt; M &amp;&amp; col &lt; K) {
+        float sum = 0.0f;
+        for (int i = 0; i &lt; N; i++) {
+            sum += A[row * N + i] * B[i * K + col];
+        }
+        C[row * K + col] = sum;
+    }
+}
+
+__global__ void update_kernel(float* X, float* A, float* B, int size, float a, float b, float c) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx &lt; size) {
+        X[idx] = a * X[idx] + b * A[idx] + c * B[idx];
+    }
+}
+
+torch::Tensor newtonschulz5_cuda(torch::Tensor G, int steps = 5, float eps = 1e-7) {
+    int M = G.size(0);
+    int N = G.size(1);
+    torch::Tensor X = G.clone().to(torch::kCUDA);
+    X /= (X.norm() + eps);
+
+    dim3 threadsPerBlock(BLOCK_SIZE, BLOCK_SIZE);
+    dim3 numBlocks((N + BLOCK_SIZE - 1) / BLOCK_SIZE, (M + BLOCK_SIZE - 1) / BLOCK_SIZE);
+    
+    torch::Tensor A = torch::zeros_like(X);
+    torch::Tensor B = torch::zeros_like(X);
+    float a = 3.4445f, b = -4.7750f, c = 2.0315f;
+
+    for (int i = 0; i &lt; steps; i++) {
+        matmul_kernel&lt;&lt;&lt;numBlocks, threadsPerBlock&gt;&gt;&gt;(X.data_ptr&lt;float&gt;(), X.data_ptr&lt;float&gt;(), A.data_ptr&lt;float&gt;(), M, N, N);
+        matmul_kernel&lt;&lt;&lt;numBlocks, threadsPerBlock&gt;&gt;&gt;(A.data_ptr&lt;float&gt;(), A.data_ptr&lt;float&gt;(), B.data_ptr&lt;float&gt;(), M, N, N);
+        update_kernel&lt;&lt;&lt;(M * N + BLOCK_SIZE - 1) / BLOCK_SIZE, BLOCK_SIZE&gt;&gt;&gt;(X.data_ptr&lt;float&gt;(), A.data_ptr&lt;float&gt;(), B.data_ptr&lt;float&gt;(), M * N, a, b, c);
+    }
+    return X;
+}
+
+PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
+    m.def("newtonschulz5_cuda", &amp;newtonschulz5_cuda, "Muon Optimizer Newton-Schulz CUDA");
+}
+</code></pre>
+    </div>
+
+    </div>
+    
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-c.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-cpp.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-python.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-markdown.min.js"></script>
+</body>
+</html>

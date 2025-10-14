@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Day 60 - GPU Kernels Learning Journey</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            background: #f5f5f5;
+        }
+        
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 2rem 1rem;
+            text-align: center;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        
+        .header h1 {
+            font-size: 2.5rem;
+            margin-bottom: 0.5rem;
+        }
+        
+        .header .subtitle {
+            font-size: 1.1rem;
+            opacity: 0.9;
+        }
+        
+        .nav {
+            background: white;
+            padding: 1rem;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+        
+        .nav-content {
+            max-width: 1200px;
+            margin: 0 auto;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 1rem;
+        }
+        
+        .nav a {
+            color: #667eea;
+            text-decoration: none;
+            padding: 0.5rem 1rem;
+            border-radius: 5px;
+            transition: all 0.3s;
+        }
+        
+        .nav a:hover {
+            background: #667eea;
+            color: white;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 2rem auto;
+            padding: 0 1rem;
+        }
+        
+        .description {
+            background: white;
+            padding: 2rem;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+            margin-bottom: 2rem;
+        }
+        
+        .description h2 {
+            color: #667eea;
+            margin-bottom: 1rem;
+            border-bottom: 2px solid #667eea;
+            padding-bottom: 0.5rem;
+        }
+        
+        .description pre {
+            background: #f5f5f5;
+            padding: 1rem;
+            border-radius: 5px;
+            overflow-x: auto;
+        }
+        
+        .file-section {
+            background: white;
+            margin-bottom: 2rem;
+            border-radius: 10px;
+            overflow: hidden;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+        }
+        
+        .file-section h3 {
+            background: #667eea;
+            color: white;
+            padding: 1rem;
+            margin: 0;
+        }
+        
+        .file-section pre {
+            margin: 0;
+            border-radius: 0;
+        }
+        
+        .file-section code {
+            display: block;
+            padding: 1.5rem;
+            max-height: 600px;
+            overflow: auto;
+        }
+        
+        .no-files {
+            text-align: center;
+            padding: 3rem;
+            color: #999;
+            font-style: italic;
+        }
+        
+        @media (max-width: 768px) {
+            .header h1 {
+                font-size: 1.8rem;
+            }
+            
+            .nav-content {
+                flex-direction: column;
+                text-align: center;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>Day 60</h1>
+        <div class="subtitle">GPU Kernels Learning Journey</div>
+    </div>
+    
+    <nav class="nav">
+        <div class="nav-content">
+            <a href="index.html">← Back to Index</a>
+            <div>
+                <a href="day-59.html">← Day 59</a>
+                <a href="day-61.html">Day 61 →</a>
+            </div>
+        </div>
+    </nav>
+    
+    <div class="container">
+        <div class="description">
+            <h2>Description</h2>
+            <div class="desc-content">
+### Files: `Bitonic_Sort.cu`
+Today I implemented a Bitonic Sort algorithm in CUDA! This version is optimized for GPUs by leveraging shared memory to accelerate the sorting process. Sorting occurs entirely in shared memory, which reduces global memory accesses and improves performance for small-to-medium array sizes.
+            </div>
+        </div>
+        
+        <h2 style="margin-bottom: 1rem; color: #667eea;">Code Files</h2>
+
+    <div class="file-section">
+        <h3>Bitonic_Sort.cu</h3>
+        <pre><code class="language-cuda">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+#include &lt;cuda.h&gt;
+
+#define N 1024
+
+__global__ void bitonic_sort_shared(float* d_array) {
+    __shared__ float s_data[N];
+    int tid = threadIdx.x;
+    
+    if (tid &lt; N) {
+        s_data[tid] = d_array[tid];
+    }
+    __syncthreads();
+    
+    for (int k = 2; k &lt;= N; k *= 2) {
+        for (int j = k / 2; j &gt; 0; j /= 2) {
+            int ixj = tid ^ j;
+            if (ixj &gt; tid) {
+                if ((tid &amp; k) == 0) {
+                    if (s_data[tid] &gt; s_data[ixj]) {
+                        float temp = s_data[tid];
+                        s_data[tid] = s_data[ixj];
+                        s_data[ixj] = temp;
+                    }
+                } else {
+                    if (s_data[tid] &lt; s_data[ixj]) {
+                        float temp = s_data[tid];
+                        s_data[tid] = s_data[ixj];
+                        s_data[ixj] = temp;
+                    }
+                }
+            }
+            __syncthreads();
+        }
+    }
+    
+    if (tid &lt; N) {
+        d_array[tid] = s_data[tid];
+    }
+}
+
+void bitonic_sort(float* h_array) {
+    float* d_array;
+    size_t size = N * sizeof(float);
+    
+    cudaMalloc((void**)&amp;d_array, size);
+    cudaMemcpy(d_array, h_array, size, cudaMemcpyHostToDevice);
+    
+    bitonic_sort_shared&lt;&lt;&lt;1, N&gt;&gt;&gt;(d_array);
+    cudaDeviceSynchronize();
+    
+    cudaMemcpy(h_array, d_array, size, cudaMemcpyDeviceToHost);
+    cudaFree(d_array);
+}
+
+void print_array(float* array) {
+    for (int i = 0; i &lt; N; i++) {
+        printf("%f ", array[i]);
+    }
+    printf("\n");
+}
+
+int main() {
+    float h_array[N];
+
+    for (int i = 0; i &lt; N; i++) {
+        h_array[i] = rand() % 1000 / 10.0;
+    }
+
+    printf("Unsorted array:\n");
+    print_array(h_array);
+
+    bitonic_sort(h_array);
+
+    printf("Sorted array:\n");
+    print_array(h_array);
+
+    return 0;
+}
+</code></pre>
+    </div>
+
+    </div>
+    
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-c.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-cpp.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-python.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-markdown.min.js"></script>
+</body>
+</html>

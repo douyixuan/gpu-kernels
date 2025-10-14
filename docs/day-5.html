@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Day 5 - GPU Kernels Learning Journey</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            background: #f5f5f5;
+        }
+        
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 2rem 1rem;
+            text-align: center;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        
+        .header h1 {
+            font-size: 2.5rem;
+            margin-bottom: 0.5rem;
+        }
+        
+        .header .subtitle {
+            font-size: 1.1rem;
+            opacity: 0.9;
+        }
+        
+        .nav {
+            background: white;
+            padding: 1rem;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+        
+        .nav-content {
+            max-width: 1200px;
+            margin: 0 auto;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 1rem;
+        }
+        
+        .nav a {
+            color: #667eea;
+            text-decoration: none;
+            padding: 0.5rem 1rem;
+            border-radius: 5px;
+            transition: all 0.3s;
+        }
+        
+        .nav a:hover {
+            background: #667eea;
+            color: white;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 2rem auto;
+            padding: 0 1rem;
+        }
+        
+        .description {
+            background: white;
+            padding: 2rem;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+            margin-bottom: 2rem;
+        }
+        
+        .description h2 {
+            color: #667eea;
+            margin-bottom: 1rem;
+            border-bottom: 2px solid #667eea;
+            padding-bottom: 0.5rem;
+        }
+        
+        .description pre {
+            background: #f5f5f5;
+            padding: 1rem;
+            border-radius: 5px;
+            overflow-x: auto;
+        }
+        
+        .file-section {
+            background: white;
+            margin-bottom: 2rem;
+            border-radius: 10px;
+            overflow: hidden;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+        }
+        
+        .file-section h3 {
+            background: #667eea;
+            color: white;
+            padding: 1rem;
+            margin: 0;
+        }
+        
+        .file-section pre {
+            margin: 0;
+            border-radius: 0;
+        }
+        
+        .file-section code {
+            display: block;
+            padding: 1.5rem;
+            max-height: 600px;
+            overflow: auto;
+        }
+        
+        .no-files {
+            text-align: center;
+            padding: 3rem;
+            color: #999;
+            font-style: italic;
+        }
+        
+        @media (max-width: 768px) {
+            .header h1 {
+                font-size: 1.8rem;
+            }
+            
+            .nav-content {
+                flex-direction: column;
+                text-align: center;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>Day 5</h1>
+        <div class="subtitle">GPU Kernels Learning Journey</div>
+    </div>
+    
+    <nav class="nav">
+        <div class="nav-content">
+            <a href="index.html">← Back to Index</a>
+            <div>
+                <a href="day-4.html">← Day 4</a>
+                <a href="day-6.html">Day 6 →</a>
+            </div>
+        </div>
+    </nav>
+    
+    <div class="container">
+        <div class="description">
+            <h2>Description</h2>
+            <div class="desc-content">
+### File: `LayerNorm.cu`
+**Summary:**  
+Implemented Layer Normalization in CUDA, often used in deep learning models. Explored normalization techniques across batches and layers using reduction operations. Addressed the challenge of maintaining numerical stability during computation.  
+
+**Learned:**  
+- How to calculate mean and variance in parallel using reduction algorithms.
+- Strategies to stabilize floating-point operations to prevent overflow or underflow issues.
+- CUDA kernel optimization for workloads involving tensor computation.  
+
+### Reading:  
+- Read **Chapter 4** of the PMPP book.  
+  -  Learned about memory optimizations and strategies for GPU performance tuning.
+
+---
+            </div>
+        </div>
+        
+        <h2 style="margin-bottom: 1rem; color: #667eea;">Code Files</h2>
+
+    <div class="file-section">
+        <h3>LayerNorm.cu</h3>
+        <pre><code class="language-cuda">#include &lt;iostream&gt;
+#include &lt;cmath&gt;
+#include &lt;cuda_runtime.h&gt;
+
+__global__ void LayerNorm(const float* A, float* B, int rows, int cols) {
+    // Calculate row index
+    int row = blockIdx.x * blockDim.x + threadIdx.x;
+
+    if (row &lt; rows) {
+        // Use shared memory for row-wise computation
+        extern __shared__ float shared[];
+        float* row_data = shared;
+
+        // Copy row data to shared memory
+        for (int col = threadIdx.y; col &lt; cols; col += blockDim.y) {
+            row_data[col] = A[row * cols + col];
+        }
+        __syncthreads();
+
+        // Compute mean
+        float mean = 0.0f;
+        for (int col = 0; col &lt; cols; col++) {
+            mean += row_data[col];
+        }
+        mean /= cols;
+
+        // Compute variance
+        float variance = 0.0f;
+        for (int col = 0; col &lt; cols; col++) {
+            variance += (row_data[col] - mean) * (row_data[col] - mean);
+        }
+        variance /= cols;
+        float stddev = sqrtf(variance + 1e-7);
+
+        // Normalize
+        for (int col = threadIdx.y; col &lt; cols; col += blockDim.y) {
+            B[row * cols + col] = (row_data[col] - mean) / stddev;
+        }
+    }
+}
+
+int main() {
+    const int rows = 10, cols = 10;
+    float *A, *B;
+
+    // Allocate host memory
+    A = (float*)malloc(rows * cols * sizeof(float));
+    B = (float*)malloc(rows * cols * sizeof(float));
+
+    // Initialize input matrix
+    for (int i = 0; i &lt; rows; i++) {
+        for (int j = 0; j &lt; cols; j++) {
+            A[i * cols + j] = static_cast&lt;float&gt;(rand()) / RAND_MAX;
+        }
+    }
+
+    // Allocate device memory
+    float *d_a, *d_b;
+    cudaMalloc(&amp;d_a, rows * cols * sizeof(float));
+    cudaMalloc(&amp;d_b, rows * cols * sizeof(float));
+
+    // Copy data to device
+    cudaMemcpy(d_a, A, rows * cols * sizeof(float), cudaMemcpyHostToDevice);
+
+    // Launch kernel
+    int blocksize = 256;
+    int gridsize = (rows + blocksize - 1) / blocksize;
+    size_t shared_memory_size = cols * sizeof(float);
+    LayerNorm&lt;&lt;&lt;gridsize, blocksize, shared_memory_size&gt;&gt;&gt;(d_a, d_b, rows, cols);
+
+    // Synchronize device
+    cudaDeviceSynchronize();
+
+    // Copy result back to host
+    cudaMemcpy(B, d_b, rows * cols * sizeof(float), cudaMemcpyDeviceToHost);
+
+    // Print results
+    printf("A:\n");
+    for (int i = 0; i &lt; rows; i++) {
+        for (int j = 0; j &lt; cols; j++) {
+            printf("%.2f ", A[i * cols + j]);
+        }
+        printf("\n");
+    }
+
+    printf("\nB:\n");
+    for (int i = 0; i &lt; rows; i++) {
+        for (int j = 0; j &lt; cols; j++) {
+            printf("%.2f ", B[i * cols + j]);
+        }
+        printf("\n");
+    }
+
+    // Free memory
+    cudaFree(d_a);
+    cudaFree(d_b);
+    free(A);
+    free(B);
+
+    return 0;
+}</code></pre>
+    </div>
+
+    </div>
+    
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-c.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-cpp.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-python.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-markdown.min.js"></script>
+</body>
+</html>

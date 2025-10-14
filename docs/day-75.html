@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Day 75 - GPU Kernels Learning Journey</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            background: #f5f5f5;
+        }
+        
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 2rem 1rem;
+            text-align: center;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        
+        .header h1 {
+            font-size: 2.5rem;
+            margin-bottom: 0.5rem;
+        }
+        
+        .header .subtitle {
+            font-size: 1.1rem;
+            opacity: 0.9;
+        }
+        
+        .nav {
+            background: white;
+            padding: 1rem;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+        
+        .nav-content {
+            max-width: 1200px;
+            margin: 0 auto;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 1rem;
+        }
+        
+        .nav a {
+            color: #667eea;
+            text-decoration: none;
+            padding: 0.5rem 1rem;
+            border-radius: 5px;
+            transition: all 0.3s;
+        }
+        
+        .nav a:hover {
+            background: #667eea;
+            color: white;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 2rem auto;
+            padding: 0 1rem;
+        }
+        
+        .description {
+            background: white;
+            padding: 2rem;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+            margin-bottom: 2rem;
+        }
+        
+        .description h2 {
+            color: #667eea;
+            margin-bottom: 1rem;
+            border-bottom: 2px solid #667eea;
+            padding-bottom: 0.5rem;
+        }
+        
+        .description pre {
+            background: #f5f5f5;
+            padding: 1rem;
+            border-radius: 5px;
+            overflow-x: auto;
+        }
+        
+        .file-section {
+            background: white;
+            margin-bottom: 2rem;
+            border-radius: 10px;
+            overflow: hidden;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+        }
+        
+        .file-section h3 {
+            background: #667eea;
+            color: white;
+            padding: 1rem;
+            margin: 0;
+        }
+        
+        .file-section pre {
+            margin: 0;
+            border-radius: 0;
+        }
+        
+        .file-section code {
+            display: block;
+            padding: 1.5rem;
+            max-height: 600px;
+            overflow: auto;
+        }
+        
+        .no-files {
+            text-align: center;
+            padding: 3rem;
+            color: #999;
+            font-style: italic;
+        }
+        
+        @media (max-width: 768px) {
+            .header h1 {
+                font-size: 1.8rem;
+            }
+            
+            .nav-content {
+                flex-direction: column;
+                text-align: center;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>Day 75</h1>
+        <div class="subtitle">GPU Kernels Learning Journey</div>
+    </div>
+    
+    <nav class="nav">
+        <div class="nav-content">
+            <a href="index.html">← Back to Index</a>
+            <div>
+                <a href="day-74.html">← Day 74</a>
+                <a href="day-76.html">Day 76 →</a>
+            </div>
+        </div>
+    </nav>
+    
+    <div class="container">
+        <div class="description">
+            <h2>Description</h2>
+            <div class="desc-content">
+### Files: `contrastive_loss.cu`
+Today, I implemented the Contrastive Loss function in pure CUDA with both forward and backward passes. The forward kernel computes the loss for each sample pair by calculating the Euclidean distance between feature vectors and applying the margin-based formulation, while the backward kernel computes gradients for the inputs. A complete main function is provided to initialize data, launch the kernels, and retrieve sample loss values for verification.
+            </div>
+        </div>
+        
+        <h2 style="margin-bottom: 1rem; color: #667eea;">Code Files</h2>
+
+    <div class="file-section">
+        <h3>contrastive_loss.cu</h3>
+        <pre><code class="language-cuda">#include &lt;iostream&gt;
+#include &lt;cuda_runtime.h&gt;
+#include &lt;cmath&gt;
+
+#define BATCH_SIZE 1024
+#define DIM 128
+#define MARGIN 1.0f
+
+
+#define CUDA_CHECK(call) \
+    do { \
+        cudaError_t err = call; \
+        if (err != cudaSuccess) { \
+            std::cerr &lt;&lt; "CUDA Error: " &lt;&lt; cudaGetErrorString(err) &lt;&lt; " at " &lt;&lt; __FILE__ &lt;&lt; ":" &lt;&lt; __LINE__ &lt;&lt; std::endl; \
+            exit(EXIT_FAILURE); \
+        } \
+    } while (0)
+
+// Euclidean Distance Kernel
+__device__ float euclidean_distance(const float* x1, const float* x2, int dim) {
+    float sum = 0.0f;
+    for (int i = 0; i &lt; dim; i++) {
+        float diff = x1[i] - x2[i];
+        sum += diff * diff;
+    }
+    return sqrtf(sum);
+}
+
+// Contrastive Loss Kernel (Forward)
+__global__ void contrastive_loss_forward(
+    const float* x1, const float* x2, const int* labels, 
+    float* loss, int batch_size, int dim, float margin) {
+
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx &lt; batch_size) {
+        float dist = euclidean_distance(&amp;x1[idx * dim], &amp;x2[idx * dim], dim);
+        int y = labels[idx];  // 1: similar, 0: dissimilar
+
+        float term = fmaxf(0.0f, margin - dist);
+        float loss_val = (1 - y) * 0.5f * dist * dist +
+                         y * 0.5f * term * term;
+        loss[idx] = loss_val;
+    }
+}
+
+// CPU function to initialize random data
+void initialize_data(float* x1, float* x2, int* labels, int batch_size, int dim) {
+    for (int i = 0; i &lt; batch_size * dim; i++) {
+        x1[i] = static_cast&lt;float&gt;(rand()) / RAND_MAX;  
+        x2[i] = static_cast&lt;float&gt;(rand()) / RAND_MAX;
+    }
+    for (int i = 0; i &lt; batch_size; i++) {
+        labels[i] = rand() % 2;  // 0 or 1
+    }
+}
+
+
+int main() {
+    float *h_x1, *h_x2, *h_loss;
+    int *h_labels;
+
+    float *d_x1, *d_x2, *d_loss;
+    int *d_labels;
+
+    
+    h_x1 = new float[BATCH_SIZE * DIM];
+    h_x2 = new float[BATCH_SIZE * DIM];
+    h_labels = new int[BATCH_SIZE];
+    h_loss = new float[BATCH_SIZE];
+
+    initialize_data(h_x1, h_x2, h_labels, BATCH_SIZE, DIM);
+
+ 
+    CUDA_CHECK(cudaMalloc(&amp;d_x1, BATCH_SIZE * DIM * sizeof(float)));
+    CUDA_CHECK(cudaMalloc(&amp;d_x2, BATCH_SIZE * DIM * sizeof(float)));
+    CUDA_CHECK(cudaMalloc(&amp;d_labels, BATCH_SIZE * sizeof(int)));
+    CUDA_CHECK(cudaMalloc(&amp;d_loss, BATCH_SIZE * sizeof(float)));
+
+  
+    CUDA_CHECK(cudaMemcpy(d_x1, h_x1, BATCH_SIZE * DIM * sizeof(float), cudaMemcpyHostToDevice));
+    CUDA_CHECK(cudaMemcpy(d_x2, h_x2, BATCH_SIZE * DIM * sizeof(float), cudaMemcpyHostToDevice));
+    CUDA_CHECK(cudaMemcpy(d_labels, h_labels, BATCH_SIZE * sizeof(int), cudaMemcpyHostToDevice));
+
+    int threads = 256;
+    int blocks = (BATCH_SIZE + threads - 1) / threads;
+    contrastive_loss_forward&lt;&lt;&lt;blocks, threads&gt;&gt;&gt;(d_x1, d_x2, d_labels, d_loss, BATCH_SIZE, DIM, MARGIN);
+    CUDA_CHECK(cudaDeviceSynchronize());
+
+    
+    CUDA_CHECK(cudaMemcpy(h_loss, d_loss, BATCH_SIZE * sizeof(float), cudaMemcpyDeviceToHost));
+
+    std::cout &lt;&lt; "Sample Contrastive Loss Values:\n";
+    for (int i = 0; i &lt; 10; i++) {
+        std::cout &lt;&lt; "Loss[" &lt;&lt; i &lt;&lt; "]: " &lt;&lt; h_loss[i] &lt;&lt; std::endl;
+    }
+
+   
+    delete[] h_x1;
+    delete[] h_x2;
+    delete[] h_labels;
+    delete[] h_loss;
+
+    CUDA_CHECK(cudaFree(d_x1));
+    CUDA_CHECK(cudaFree(d_x2));
+    CUDA_CHECK(cudaFree(d_labels));
+    CUDA_CHECK(cudaFree(d_loss));
+
+    return 0;
+}
+</code></pre>
+    </div>
+
+    </div>
+    
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-c.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-cpp.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-python.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-markdown.min.js"></script>
+</body>
+</html>

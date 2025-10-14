@@ -1,0 +1,407 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Day 19 - GPU Kernels Learning Journey</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            background: #f5f5f5;
+        }
+        
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 2rem 1rem;
+            text-align: center;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        
+        .header h1 {
+            font-size: 2.5rem;
+            margin-bottom: 0.5rem;
+        }
+        
+        .header .subtitle {
+            font-size: 1.1rem;
+            opacity: 0.9;
+        }
+        
+        .nav {
+            background: white;
+            padding: 1rem;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+        
+        .nav-content {
+            max-width: 1200px;
+            margin: 0 auto;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 1rem;
+        }
+        
+        .nav a {
+            color: #667eea;
+            text-decoration: none;
+            padding: 0.5rem 1rem;
+            border-radius: 5px;
+            transition: all 0.3s;
+        }
+        
+        .nav a:hover {
+            background: #667eea;
+            color: white;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 2rem auto;
+            padding: 0 1rem;
+        }
+        
+        .description {
+            background: white;
+            padding: 2rem;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+            margin-bottom: 2rem;
+        }
+        
+        .description h2 {
+            color: #667eea;
+            margin-bottom: 1rem;
+            border-bottom: 2px solid #667eea;
+            padding-bottom: 0.5rem;
+        }
+        
+        .description pre {
+            background: #f5f5f5;
+            padding: 1rem;
+            border-radius: 5px;
+            overflow-x: auto;
+        }
+        
+        .file-section {
+            background: white;
+            margin-bottom: 2rem;
+            border-radius: 10px;
+            overflow: hidden;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+        }
+        
+        .file-section h3 {
+            background: #667eea;
+            color: white;
+            padding: 1rem;
+            margin: 0;
+        }
+        
+        .file-section pre {
+            margin: 0;
+            border-radius: 0;
+        }
+        
+        .file-section code {
+            display: block;
+            padding: 1.5rem;
+            max-height: 600px;
+            overflow: auto;
+        }
+        
+        .no-files {
+            text-align: center;
+            padding: 3rem;
+            color: #999;
+            font-style: italic;
+        }
+        
+        @media (max-width: 768px) {
+            .header h1 {
+                font-size: 1.8rem;
+            }
+            
+            .nav-content {
+                flex-direction: column;
+                text-align: center;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>Day 19</h1>
+        <div class="subtitle">GPU Kernels Learning Journey</div>
+    </div>
+    
+    <nav class="nav">
+        <div class="nav-content">
+            <a href="index.html">← Back to Index</a>
+            <div>
+                <a href="day-18.html">← Day 18</a>
+                <a href="day-20.html">Day 20 →</a>
+            </div>
+        </div>
+    </nav>
+    
+    <div class="container">
+        <div class="description">
+            <h2>Description</h2>
+            <div class="desc-content">
+### File: `fcnet.cu`
+**Summary:**  
+Implemented a fully connected neural network (FCNet) using cuDNN in a CUDA program. This program utilizes the cuDNN library to perform forward passes through the network. The network consists of three layers: an input layer, two hidden layers, and an output layer. Each layer applies convolution, activation functions (ReLU), and includes bias terms.
+
+**Learned:**  
+- How to leverage cuDNN to construct and optimize neural networks effectively on the GPU.
+- Understanding of tensor descriptors, filter descriptors, and convolution descriptors, which are essential for defining the structure of the network.
+- The process for initializing weights using the cuRAND library to generate random numbers for model training.
+- Execution of the forward pass through the network with proper handling of data types, memory allocations, and error checking.
+- Importance of initializing and cleaning up CUDA and cuDNN resources to prevent memory leaks.
+
+### Code Overview:
+- Used `cudnnCreate`, `cudnnSetTensor4dDescriptor`, and related functions to define the structure of inputs, outputs, and weights.
+- Utilized convolution and activation layers to mimic the behavior of a feedforward neural network.
+- Implemented error checking macros (`CHECK_CUDA`, `CHECK_CUDNN`) to facilitate debugging of CUDA and cuDNN calls.
+- Conducted a simple forward training loop to process data; generated dummy input and label data for testing purposes.
+
+---
+            </div>
+        </div>
+        
+        <h2 style="margin-bottom: 1rem; color: #667eea;">Code Files</h2>
+
+    <div class="file-section">
+        <h3>fcnet.cu</h3>
+        <pre><code class="language-cuda">// use this command: nvcc -o fcnet fcnet.cu -lcudnn -lcublas -lcurand
+
+#include &lt;cudnn.h&gt;
+#include &lt;cuda_runtime.h&gt;
+#include &lt;curand.h&gt;
+#include &lt;cstdlib&gt;
+#include &lt;ctime&gt;
+#include &lt;iostream&gt;
+
+#define CHECK_CUDA(func) { \
+    cudaError_t status = (func); \
+    if (status != cudaSuccess) { \
+        std::cerr &lt;&lt; "CUDA Error at " &lt;&lt; __FILE__ &lt;&lt; ":" &lt;&lt; __LINE__ &lt;&lt; " - " &lt;&lt; cudaGetErrorString(status) &lt;&lt; std::endl; \
+        exit(EXIT_FAILURE); \
+    } \
+}
+
+#define CHECK_CUDNN(func) { \
+    cudnnStatus_t status = (func); \
+    if (status != CUDNN_STATUS_SUCCESS) { \
+        std::cerr &lt;&lt; "cuDNN Error at " &lt;&lt; __FILE__ &lt;&lt; ":" &lt;&lt; __LINE__ &lt;&lt; " - " &lt;&lt; cudnnGetErrorString(status) &lt;&lt; std::endl; \
+        exit(EXIT_FAILURE); \
+    } \
+}
+
+// Network parameters
+const int input_size = 1000;
+const int hidden_size = 512;
+const int output_size = 10;
+const int batch_size = 64;
+const float learning_rate = 0.001f;
+const int epochs = 10;
+
+// Helper function to initialize weights
+void initialize_weights(float* weights, int size) {
+    curandGenerator_t gen;
+    curandCreateGenerator(&amp;gen, CURAND_RNG_PSEUDO_DEFAULT);
+    curandSetPseudoRandomGeneratorSeed(gen, time(NULL));
+    curandGenerateUniform(gen, weights, size);
+    curandDestroyGenerator(gen);
+}
+
+int main() {
+    // Initialize CUDA and cuDNN
+    cudnnHandle_t cudnn;
+    CHECK_CUDNN(cudnnCreate(&amp;cudnn));
+
+    // Create tensor descriptors
+    cudnnTensorDescriptor_t input_desc, hidden1_desc, hidden2_desc, output_desc;
+    CHECK_CUDNN(cudnnCreateTensorDescriptor(&amp;input_desc));
+    CHECK_CUDNN(cudnnCreateTensorDescriptor(&amp;hidden1_desc));
+    CHECK_CUDNN(cudnnCreateTensorDescriptor(&amp;hidden2_desc));
+    CHECK_CUDNN(cudnnCreateTensorDescriptor(&amp;output_desc));
+    
+    // Set tensor dimensions (NCHW format)
+    CHECK_CUDNN(cudnnSetTensor4dDescriptor(input_desc, CUDNN_TENSOR_NCHW, CUDNN_DATA_FLOAT,
+                                          batch_size, input_size, 1, 1));
+    CHECK_CUDNN(cudnnSetTensor4dDescriptor(hidden1_desc, CUDNN_TENSOR_NCHW, CUDNN_DATA_FLOAT,
+                                          batch_size, hidden_size, 1, 1));
+    CHECK_CUDNN(cudnnSetTensor4dDescriptor(hidden2_desc, CUDNN_TENSOR_NCHW, CUDNN_DATA_FLOAT,
+                                          batch_size, hidden_size, 1, 1));
+    CHECK_CUDNN(cudnnSetTensor4dDescriptor(output_desc, CUDNN_TENSOR_NCHW, CUDNN_DATA_FLOAT,
+                                          batch_size, output_size, 1, 1));
+
+    // Create filter descriptors (weights)
+    cudnnFilterDescriptor_t fc1_w_desc, fc2_w_desc, fc3_w_desc;
+    CHECK_CUDNN(cudnnCreateFilterDescriptor(&amp;fc1_w_desc));
+    CHECK_CUDNN(cudnnSetFilter4dDescriptor(fc1_w_desc, CUDNN_DATA_FLOAT, CUDNN_TENSOR_NCHW,
+                                          hidden_size, input_size, 1, 1));
+    
+    CHECK_CUDNN(cudnnCreateFilterDescriptor(&amp;fc2_w_desc));
+    CHECK_CUDNN(cudnnSetFilter4dDescriptor(fc2_w_desc, CUDNN_DATA_FLOAT, CUDNN_TENSOR_NCHW,
+                                          hidden_size, hidden_size, 1, 1));
+    
+    CHECK_CUDNN(cudnnCreateFilterDescriptor(&amp;fc3_w_desc));
+    CHECK_CUDNN(cudnnSetFilter4dDescriptor(fc3_w_desc, CUDNN_DATA_FLOAT, CUDNN_TENSOR_NCHW,
+                                          output_size, hidden_size, 1, 1));
+
+    // Create activation descriptor (ReLU)
+    cudnnActivationDescriptor_t relu_desc;
+    CHECK_CUDNN(cudnnCreateActivationDescriptor(&amp;relu_desc));
+    CHECK_CUDNN(cudnnSetActivationDescriptor(relu_desc, CUDNN_ACTIVATION_RELU, 
+                                             CUDNN_NOT_PROPAGATE_NAN, 0.0));
+
+    // Allocate device memory
+    float *d_input, *d_labels, *d_output;
+    CHECK_CUDA(cudaMalloc(&amp;d_input, batch_size * input_size * sizeof(float)));
+    CHECK_CUDA(cudaMalloc(&amp;d_labels, batch_size * output_size * sizeof(float)));
+    CHECK_CUDA(cudaMalloc(&amp;d_output, batch_size * output_size * sizeof(float)));
+
+    // Initialize weights and biases
+    float *d_w1, *d_b1, *d_w2, *d_b2, *d_w3, *d_b3;
+    CHECK_CUDA(cudaMalloc(&amp;d_w1, hidden_size * input_size * sizeof(float)));
+    CHECK_CUDA(cudaMalloc(&amp;d_b1, hidden_size * sizeof(float)));
+    CHECK_CUDA(cudaMalloc(&amp;d_w2, hidden_size * hidden_size * sizeof(float)));
+    CHECK_CUDA(cudaMalloc(&amp;d_b2, hidden_size * sizeof(float)));
+    CHECK_CUDA(cudaMalloc(&amp;d_w3, output_size * hidden_size * sizeof(float)));
+    CHECK_CUDA(cudaMalloc(&amp;d_b3, output_size * sizeof(float)));
+
+    initialize_weights(d_w1, hidden_size * input_size);
+    initialize_weights(d_w2, hidden_size * hidden_size);
+    initialize_weights(d_w3, output_size * hidden_size);
+    CHECK_CUDA(cudaMemset(d_b1, 0, hidden_size * sizeof(float)));
+    CHECK_CUDA(cudaMemset(d_b2, 0, hidden_size * sizeof(float)));
+    CHECK_CUDA(cudaMemset(d_b3, 0, output_size * sizeof(float)));
+
+    // Generate dummy data
+    initialize_weights(d_input, batch_size * input_size);
+    initialize_weights(d_labels, batch_size * output_size);
+
+    // Create convolution descriptors
+    cudnnConvolutionDescriptor_t conv_desc;
+    CHECK_CUDNN(cudnnCreateConvolutionDescriptor(&amp;conv_desc));
+    CHECK_CUDNN(cudnnSetConvolution2dDescriptor(conv_desc, 0, 0, 1, 1, 1, 1,
+                                               CUDNN_CROSS_CORRELATION, CUDNN_DATA_FLOAT));
+
+    // Training loop
+    for (int epoch = 0; epoch &lt; epochs; ++epoch) {
+        // Forward pass
+        float alpha = 1.0f, beta = 0.0f;
+        float* d_hidden1, *d_hidden2;
+        CHECK_CUDA(cudaMalloc(&amp;d_hidden1, batch_size * hidden_size * sizeof(float)));
+        CHECK_CUDA(cudaMalloc(&amp;d_hidden2, batch_size * hidden_size * sizeof(float)));
+
+        // Layer 1: Input -&gt; Hidden1
+        CHECK_CUDNN(cudnnConvolutionForward(cudnn, &amp;alpha,
+                                           input_desc, d_input,
+                                           fc1_w_desc, d_w1,
+                                           conv_desc,
+                                           CUDNN_CONVOLUTION_FWD_ALGO_IMPLICIT_GEMM,
+                                           nullptr, 0,
+                                           &amp;beta,
+                                           hidden1_desc, d_hidden1));
+        CHECK_CUDNN(cudnnAddTensor(cudnn, &amp;alpha, hidden1_desc, d_b1,
+                                  &amp;alpha, hidden1_desc, d_hidden1));
+        CHECK_CUDNN(cudnnActivationForward(cudnn, relu_desc,
+                                          &amp;alpha, hidden1_desc, d_hidden1,
+                                          &amp;beta, hidden1_desc, d_hidden1));
+
+        // Layer 2: Hidden1 -&gt; Hidden2
+        CHECK_CUDNN(cudnnConvolutionForward(cudnn, &amp;alpha,
+                                           hidden1_desc, d_hidden1,
+                                           fc2_w_desc, d_w2,
+                                           conv_desc,
+                                           CUDNN_CONVOLUTION_FWD_ALGO_IMPLICIT_GEMM,
+                                           nullptr, 0,
+                                           &amp;beta,
+                                           hidden2_desc, d_hidden2));
+        CHECK_CUDNN(cudnnAddTensor(cudnn, &amp;alpha, hidden2_desc, d_b2,
+                                  &amp;alpha, hidden2_desc, d_hidden2));
+        CHECK_CUDNN(cudnnActivationForward(cudnn, relu_desc,
+                                          &amp;alpha, hidden2_desc, d_hidden2,
+                                          &amp;beta, hidden2_desc, d_hidden2));
+
+        // Layer 3: Hidden2 -&gt; Output
+        CHECK_CUDNN(cudnnConvolutionForward(cudnn, &amp;alpha,
+                                           hidden2_desc, d_hidden2,
+                                           fc3_w_desc, d_w3,
+                                           conv_desc,
+                                           CUDNN_CONVOLUTION_FWD_ALGO_IMPLICIT_GEMM,
+                                           nullptr, 0,
+                                           &amp;beta,
+                                           output_desc, d_output));
+        CHECK_CUDNN(cudnnAddTensor(cudnn, &amp;alpha, output_desc, d_b3,
+                                  &amp;alpha, output_desc, d_output));
+
+        // Cleanup intermediate buffers
+        CHECK_CUDA(cudaFree(d_hidden1));
+        CHECK_CUDA(cudaFree(d_hidden2));
+
+        // Inference (example)
+        if (epoch == epochs - 1) {
+            float* h_output = new float[batch_size * output_size];
+            CHECK_CUDA(cudaMemcpy(h_output, d_output, batch_size * output_size * sizeof(float),
+                                 cudaMemcpyDeviceToHost));
+            std::cout &lt;&lt; "Final inference results sample: " &lt;&lt; h_output[0] &lt;&lt; std::endl;
+            delete[] h_output;
+        }
+    }
+
+    // Cleanup
+    CHECK_CUDA(cudaFree(d_input));
+    CHECK_CUDA(cudaFree(d_labels));
+    CHECK_CUDA(cudaFree(d_output));
+    CHECK_CUDA(cudaFree(d_w1));
+    CHECK_CUDA(cudaFree(d_b1));
+    CHECK_CUDA(cudaFree(d_w2));
+    CHECK_CUDA(cudaFree(d_b2));
+    CHECK_CUDA(cudaFree(d_w3));
+    CHECK_CUDA(cudaFree(d_b3));
+
+    CHECK_CUDNN(cudnnDestroyConvolutionDescriptor(conv_desc));
+    CHECK_CUDNN(cudnnDestroyActivationDescriptor(relu_desc));
+    CHECK_CUDNN(cudnnDestroyFilterDescriptor(fc1_w_desc));
+    CHECK_CUDNN(cudnnDestroyFilterDescriptor(fc2_w_desc));
+    CHECK_CUDNN(cudnnDestroyFilterDescriptor(fc3_w_desc));
+    CHECK_CUDNN(cudnnDestroyTensorDescriptor(input_desc));
+    CHECK_CUDNN(cudnnDestroyTensorDescriptor(hidden1_desc));
+    CHECK_CUDNN(cudnnDestroyTensorDescriptor(hidden2_desc));
+    CHECK_CUDNN(cudnnDestroyTensorDescriptor(output_desc));
+    CHECK_CUDNN(cudnnDestroy(cudnn));
+
+    return 0;
+}
+
+</code></pre>
+    </div>
+
+    </div>
+    
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-c.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-cpp.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-python.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-markdown.min.js"></script>
+</body>
+</html>

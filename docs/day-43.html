@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Day 43 - GPU Kernels Learning Journey</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            background: #f5f5f5;
+        }
+        
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 2rem 1rem;
+            text-align: center;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        
+        .header h1 {
+            font-size: 2.5rem;
+            margin-bottom: 0.5rem;
+        }
+        
+        .header .subtitle {
+            font-size: 1.1rem;
+            opacity: 0.9;
+        }
+        
+        .nav {
+            background: white;
+            padding: 1rem;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+        
+        .nav-content {
+            max-width: 1200px;
+            margin: 0 auto;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 1rem;
+        }
+        
+        .nav a {
+            color: #667eea;
+            text-decoration: none;
+            padding: 0.5rem 1rem;
+            border-radius: 5px;
+            transition: all 0.3s;
+        }
+        
+        .nav a:hover {
+            background: #667eea;
+            color: white;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 2rem auto;
+            padding: 0 1rem;
+        }
+        
+        .description {
+            background: white;
+            padding: 2rem;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+            margin-bottom: 2rem;
+        }
+        
+        .description h2 {
+            color: #667eea;
+            margin-bottom: 1rem;
+            border-bottom: 2px solid #667eea;
+            padding-bottom: 0.5rem;
+        }
+        
+        .description pre {
+            background: #f5f5f5;
+            padding: 1rem;
+            border-radius: 5px;
+            overflow-x: auto;
+        }
+        
+        .file-section {
+            background: white;
+            margin-bottom: 2rem;
+            border-radius: 10px;
+            overflow: hidden;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+        }
+        
+        .file-section h3 {
+            background: #667eea;
+            color: white;
+            padding: 1rem;
+            margin: 0;
+        }
+        
+        .file-section pre {
+            margin: 0;
+            border-radius: 0;
+        }
+        
+        .file-section code {
+            display: block;
+            padding: 1.5rem;
+            max-height: 600px;
+            overflow: auto;
+        }
+        
+        .no-files {
+            text-align: center;
+            padding: 3rem;
+            color: #999;
+            font-style: italic;
+        }
+        
+        @media (max-width: 768px) {
+            .header h1 {
+                font-size: 1.8rem;
+            }
+            
+            .nav-content {
+                flex-direction: column;
+                text-align: center;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>Day 43</h1>
+        <div class="subtitle">GPU Kernels Learning Journey</div>
+    </div>
+    
+    <nav class="nav">
+        <div class="nav-content">
+            <a href="index.html">← Back to Index</a>
+            <div>
+                <a href="day-42.html">← Day 42</a>
+                <a href="day-44.html">Day 44 →</a>
+            </div>
+        </div>
+    </nav>
+    
+    <div class="container">
+        <div class="description">
+            <h2>Description</h2>
+            <div class="desc-content">
+### Files: `MatrixMul_Autotuning_Triton.py`
+I implemented Full Triton Matrix Multiplication Code with Autotuning.
+            </div>
+        </div>
+        
+        <h2 style="margin-bottom: 1rem; color: #667eea;">Code Files</h2>
+
+    <div class="file-section">
+        <h3>MatrixMul_Autotuning_Triton.py</h3>
+        <pre><code class="language-python">import torch
+import triton
+import triton.language as tl
+
+@triton.autotune(
+    configs=[
+        triton.Config({'BLOCK_SIZE': 16}, num_warps=4),
+        triton.Config({'BLOCK_SIZE': 32}, num_warps=8),
+    ],
+    key=['M', 'N', 'K']
+)
+@triton.jit
+def optimized_matmul_kernel(
+    A, B, C, 
+    M, N, K, 
+    stride_am, stride_ak, 
+    stride_bk, stride_bn, 
+    stride_cm, stride_cn, 
+    BLOCK_SIZE: tl.constexpr
+):
+    """Optimized matrix multiplication kernel using Triton."""
+    
+    # Compute the row and column indices for each block
+    pid = tl.program_id(0)  
+    num_cols = N // BLOCK_SIZE  
+    row = pid // num_cols  
+    col = pid % num_cols  
+
+    # Define pointers to the A and B matrices
+    a_ptr = A + row * stride_am + tl.arange(0, BLOCK_SIZE)[:, None] * stride_ak
+    b_ptr = B + tl.arange(0, BLOCK_SIZE)[None, :] * stride_bn + col * stride_bk
+
+    # Accumulator for the matrix multiplication result
+    acc = tl.zeros((BLOCK_SIZE, BLOCK_SIZE), dtype=tl.float32)
+
+    # Loop over K in BLOCK_SIZE chunks
+    for k in range(0, K, BLOCK_SIZE):
+        a = tl.load(a_ptr, mask=a_ptr &lt; A + M * stride_am, other=0.0)
+        b = tl.load(b_ptr, mask=b_ptr &lt; B + K * stride_bk, other=0.0)
+        acc += tl.dot(a, b)  
+        
+        # Move pointers to the next K-block
+        a_ptr += BLOCK_SIZE * stride_ak
+        b_ptr += BLOCK_SIZE * stride_bk
+
+    # Store the result back to C
+    c_ptr = C + row * stride_cm + col * stride_cn
+    tl.store(c_ptr, acc)
+
+# Matrix dimensions
+M, N, K = 1024, 1024, 1024
+BLOCK_SIZE = 16  # This will be overridden by autotuning
+
+# Create random input matrices
+A = torch.randn((M, K), device="cuda", dtype=torch.float32)
+B = torch.randn((K, N), device="cuda", dtype=torch.float32)
+C = torch.empty((M, N), device="cuda", dtype=torch.float32)
+
+# Define grid size (number of program instances)
+grid = (M // BLOCK_SIZE) * (N // BLOCK_SIZE)
+
+# Launch kernel
+optimized_matmul_kernel[grid](
+    A, B, C, 
+    M, N, K, 
+    A.stride(0), A.stride(1), 
+    B.stride(0), B.stride(1), 
+    C.stride(0), C.stride(1), 
+    BLOCK_SIZE
+)
+
+# Verify correctness using PyTorch
+C_ref = torch.matmul(A, B)
+print(torch.allclose(C, C_ref, atol=1e-3))
+</code></pre>
+    </div>
+
+    </div>
+    
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-c.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-cpp.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-python.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-markdown.min.js"></script>
+</body>
+</html>

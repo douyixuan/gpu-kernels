@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Day 18 - GPU Kernels Learning Journey</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            background: #f5f5f5;
+        }
+        
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 2rem 1rem;
+            text-align: center;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        
+        .header h1 {
+            font-size: 2.5rem;
+            margin-bottom: 0.5rem;
+        }
+        
+        .header .subtitle {
+            font-size: 1.1rem;
+            opacity: 0.9;
+        }
+        
+        .nav {
+            background: white;
+            padding: 1rem;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+        
+        .nav-content {
+            max-width: 1200px;
+            margin: 0 auto;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 1rem;
+        }
+        
+        .nav a {
+            color: #667eea;
+            text-decoration: none;
+            padding: 0.5rem 1rem;
+            border-radius: 5px;
+            transition: all 0.3s;
+        }
+        
+        .nav a:hover {
+            background: #667eea;
+            color: white;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 2rem auto;
+            padding: 0 1rem;
+        }
+        
+        .description {
+            background: white;
+            padding: 2rem;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+            margin-bottom: 2rem;
+        }
+        
+        .description h2 {
+            color: #667eea;
+            margin-bottom: 1rem;
+            border-bottom: 2px solid #667eea;
+            padding-bottom: 0.5rem;
+        }
+        
+        .description pre {
+            background: #f5f5f5;
+            padding: 1rem;
+            border-radius: 5px;
+            overflow-x: auto;
+        }
+        
+        .file-section {
+            background: white;
+            margin-bottom: 2rem;
+            border-radius: 10px;
+            overflow: hidden;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+        }
+        
+        .file-section h3 {
+            background: #667eea;
+            color: white;
+            padding: 1rem;
+            margin: 0;
+        }
+        
+        .file-section pre {
+            margin: 0;
+            border-radius: 0;
+        }
+        
+        .file-section code {
+            display: block;
+            padding: 1.5rem;
+            max-height: 600px;
+            overflow: auto;
+        }
+        
+        .no-files {
+            text-align: center;
+            padding: 3rem;
+            color: #999;
+            font-style: italic;
+        }
+        
+        @media (max-width: 768px) {
+            .header h1 {
+                font-size: 1.8rem;
+            }
+            
+            .nav-content {
+                flex-direction: column;
+                text-align: center;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>Day 18</h1>
+        <div class="subtitle">GPU Kernels Learning Journey</div>
+    </div>
+    
+    <nav class="nav">
+        <div class="nav-content">
+            <a href="index.html">← Back to Index</a>
+            <div>
+                <a href="day-17.html">← Day 17</a>
+                <a href="day-19.html">Day 19 →</a>
+            </div>
+        </div>
+    </nav>
+    
+    <div class="container">
+        <div class="description">
+            <h2>Description</h2>
+            <div class="desc-content">
+### File: `MutMul_cublas.cu`
+**Summary:**  
+Implemented a matrix multiplication algorithm using the cuBLAS library, which is optimized for CUDA-capable GPUs. This involved utilizing high-performance BLAS (Basic Linear Algebra Subprograms) routines for efficient computation of matrix products. The cuBLAS library abstracts much of the complexity involved in parallel programming for matrix operations, allowing for better performance due to its efficient use of memory and computations optimized for the hardware.
+
+---
+
+### Reading:  
+- Completed **Chapter 18** of the PMPP book: 
+  - Programming a Heterogeneous Computing Cluster
+- Completed **Chapter 19** of the PMPP book:
+  - Parallel Programming with OpenACC 
+- Completed **Chapter 20** of the PMPP book:
+  - More on CUDA and Graphics Processing Unit Computing
+- Completed **Chapter 21** of the PMPP book:
+  - Programming a Heterogeneous Computing Cluster
+- Explored **Appendix A** (Introduction to OpenCL) and **Appendix B** (THRUST), **Appendix C**: CUDA Fortran, **Appendix D**: An introduction to C++ AMP 
+
+---
+            </div>
+        </div>
+        
+        <h2 style="margin-bottom: 1rem; color: #667eea;">Code Files</h2>
+
+    <div class="file-section">
+        <h3>MutMul_cublas.cu</h3>
+        <pre><code class="language-cuda">#include &lt;cuda_runtime.h&gt;
+#include &lt;cublas_v2.h&gt;
+#include &lt;stdio.h&gt;
+
+int main() {
+    cublasHandle_t handle;
+    cublasCreate(&amp;handle);
+
+    int M = 2, N = 3, K = 4;
+    float *h_A, *h_B, *h_C;
+    h_A = (float *)malloc(M * K * sizeof(float));
+    h_B = (float *)malloc(K * N * sizeof(float));
+    h_C = (float *)malloc(M * N * sizeof(float));
+
+    for (int i = 0; i &lt; M; i++)
+        for (int j = 0; j &lt; K; j++)
+            h_A[i * K + j] = i + j;
+
+    for (int i = 0; i &lt; K; i++)
+        for (int j = 0; j &lt; N; j++)
+            h_B[i * N + j] = i + j;
+
+    float *d_A, *d_B, *d_C;
+    cudaMalloc(&amp;d_A, M * K * sizeof(float));
+    cudaMalloc(&amp;d_B, K * N * sizeof(float));
+    cudaMalloc(&amp;d_C, M * N * sizeof(float));
+
+    cudaMemcpy(d_A, h_A, M * K * sizeof(float), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_B, h_B, K * N * sizeof(float), cudaMemcpyHostToDevice);
+
+    const float alpha = 1.0f, beta = 0.0f;
+    cublasSgemm(handle, CUBLAS_OP_N, CUBLAS_OP_N,
+                M, N, K, &amp;alpha,
+                d_A, M, d_B, K,
+                &amp;beta, d_C, M);
+
+    cudaMemcpy(h_C, d_C, M * N * sizeof(float), cudaMemcpyDeviceToHost);
+
+    printf("Matrix A:\n");
+    for (int i = 0; i &lt; M; i++) {
+        for (int j = 0; j &lt; K; j++) {
+            printf("%f ", h_A[i * K + j]);
+        }
+        printf("\n");
+    }
+
+    printf("Matrix B:\n");
+    for (int i = 0; i &lt; K; i++) {
+        for (int j = 0; j &lt; N; j++) {
+            printf("%f ", h_B[i * N + j]);
+        }
+        printf("\n");
+    }
+
+    printf("Matrix C = A * B:\n");
+    for (int i = 0; i &lt; M; i++) {
+        for (int j = 0; j &lt; N; j++) {
+            printf("%f ", h_C[i + j * M]);
+        }
+        printf("\n");
+    }
+
+    free(h_A); free(h_B); free(h_C);
+    cudaFree(d_A); cudaFree(d_B); cudaFree(d_C);
+    cublasDestroy(handle);
+    return 0;
+}
+</code></pre>
+    </div>
+
+    </div>
+    
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-c.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-cpp.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-python.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-markdown.min.js"></script>
+</body>
+</html>

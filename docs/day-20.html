@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Day 20 - GPU Kernels Learning Journey</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            background: #f5f5f5;
+        }
+        
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 2rem 1rem;
+            text-align: center;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        
+        .header h1 {
+            font-size: 2.5rem;
+            margin-bottom: 0.5rem;
+        }
+        
+        .header .subtitle {
+            font-size: 1.1rem;
+            opacity: 0.9;
+        }
+        
+        .nav {
+            background: white;
+            padding: 1rem;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+        
+        .nav-content {
+            max-width: 1200px;
+            margin: 0 auto;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 1rem;
+        }
+        
+        .nav a {
+            color: #667eea;
+            text-decoration: none;
+            padding: 0.5rem 1rem;
+            border-radius: 5px;
+            transition: all 0.3s;
+        }
+        
+        .nav a:hover {
+            background: #667eea;
+            color: white;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 2rem auto;
+            padding: 0 1rem;
+        }
+        
+        .description {
+            background: white;
+            padding: 2rem;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+            margin-bottom: 2rem;
+        }
+        
+        .description h2 {
+            color: #667eea;
+            margin-bottom: 1rem;
+            border-bottom: 2px solid #667eea;
+            padding-bottom: 0.5rem;
+        }
+        
+        .description pre {
+            background: #f5f5f5;
+            padding: 1rem;
+            border-radius: 5px;
+            overflow-x: auto;
+        }
+        
+        .file-section {
+            background: white;
+            margin-bottom: 2rem;
+            border-radius: 10px;
+            overflow: hidden;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+        }
+        
+        .file-section h3 {
+            background: #667eea;
+            color: white;
+            padding: 1rem;
+            margin: 0;
+        }
+        
+        .file-section pre {
+            margin: 0;
+            border-radius: 0;
+        }
+        
+        .file-section code {
+            display: block;
+            padding: 1.5rem;
+            max-height: 600px;
+            overflow: auto;
+        }
+        
+        .no-files {
+            text-align: center;
+            padding: 3rem;
+            color: #999;
+            font-style: italic;
+        }
+        
+        @media (max-width: 768px) {
+            .header h1 {
+                font-size: 1.8rem;
+            }
+            
+            .nav-content {
+                flex-direction: column;
+                text-align: center;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>Day 20</h1>
+        <div class="subtitle">GPU Kernels Learning Journey</div>
+    </div>
+    
+    <nav class="nav">
+        <div class="nav-content">
+            <a href="index.html">← Back to Index</a>
+            <div>
+                <a href="day-19.html">← Day 19</a>
+                <a href="day-21.html">Day 21 →</a>
+            </div>
+        </div>
+    </nav>
+    
+    <div class="container">
+        <div class="description">
+            <h2>Description</h2>
+            <div class="desc-content">
+### File: `rope.cu`
+**Summary:**  
+Implemented the Rotary Positional Encoding (RoPE) mechanism in CUDA for enhancing transformer models. RoPE is designed to introduce the notion of position into token representations, allowing the model to effectively capture the sequential nature of the input data without the limitations of traditional positional encodings.
+
+### Reading:
+- Continued exploring additional literature on data structures suitable for parallel computing, focusing on the use cases and performance implications of rope data structures in practical applications.
+
+---
+            </div>
+        </div>
+        
+        <h2 style="margin-bottom: 1rem; color: #667eea;">Code Files</h2>
+
+    <div class="file-section">
+        <h3>RoPE.cu</h3>
+        <pre><code class="language-cuda">#include &lt;cuda_runtime.h&gt;
+#include &lt;math.h&gt;
+
+__device__ void apply_rotary_embedding(
+    float* q,           // query vectors
+    float* k,           // key vectors
+    const int head_dim, // dimension of each head
+    const int position, // absolute position in sequence
+    const float base = 10000.0f
+) {
+    // Process pairs of elements (real, imaginary)
+    for (int i = 0; i &lt; head_dim; i += 2) {
+        float freq = 1.0f / powf(base, (float)(i) / head_dim);
+        float theta = position * freq;
+        
+        // Calculate rotation matrix elements
+        float cos_theta = cosf(theta);
+        float sin_theta = sinf(theta);
+        
+        // Cache original values
+        float q_real = q[i];
+        float q_img = q[i + 1];
+        float k_real = k[i];
+        float k_img = k[i + 1];
+        
+        // Apply rotation to query
+        q[i] = q_real * cos_theta - q_img * sin_theta;
+        q[i + 1] = q_real * sin_theta + q_img * cos_theta;
+        
+        // Apply rotation to key
+        k[i] = k_real * cos_theta - k_img * sin_theta;
+        k[i + 1] = k_real * sin_theta + k_img * cos_theta;
+    }
+}
+
+__global__ void rope_kernel(
+    float* queries,        // [batch_size, seq_len, num_heads, head_dim]
+    float* keys,          // [batch_size, seq_len, num_heads, head_dim]
+    const int batch_size,
+    const int seq_len,
+    const int num_heads,
+    const int head_dim
+) {
+    // Calculate global position
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    
+    // Calculate batch, sequence position, and head indices
+    int batch_idx = idx / (seq_len * num_heads);
+    int seq_idx = (idx / num_heads) % seq_len;
+    int head_idx = idx % num_heads;
+    
+    if (batch_idx &gt;= batch_size) return;
+    
+    // Calculate base pointer offsets
+    int base_idx = batch_idx * (seq_len * num_heads * head_dim) + 
+                   seq_idx * (num_heads * head_dim) +
+                   head_idx * head_dim;
+    
+    // Apply rotary embedding to this position
+    apply_rotary_embedding(
+        &amp;queries[base_idx],
+        &amp;keys[base_idx],
+        head_dim,
+        seq_idx
+    );
+}
+
+// Helper function to launch the kernel
+void apply_rope(
+    float* d_queries,
+    float* d_keys,
+    const int batch_size,
+    const int seq_len,
+    const int num_heads,
+    const int head_dim
+) {
+    dim3 block_size(256);
+    dim3 grid_size((batch_size * seq_len * num_heads + block_size.x - 1) / block_size.x);
+    
+    rope_kernel&lt;&lt;&lt;grid_size, block_size&gt;&gt;&gt;(
+        d_queries,
+        d_keys,
+        batch_size,
+        seq_len,
+        num_heads,
+        head_dim
+    );
+} </code></pre>
+    </div>
+
+    </div>
+    
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-c.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-cpp.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-python.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-markdown.min.js"></script>
+</body>
+</html>

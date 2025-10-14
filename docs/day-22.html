@@ -1,0 +1,384 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Day 22 - GPU Kernels Learning Journey</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            background: #f5f5f5;
+        }
+        
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 2rem 1rem;
+            text-align: center;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        
+        .header h1 {
+            font-size: 2.5rem;
+            margin-bottom: 0.5rem;
+        }
+        
+        .header .subtitle {
+            font-size: 1.1rem;
+            opacity: 0.9;
+        }
+        
+        .nav {
+            background: white;
+            padding: 1rem;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+        
+        .nav-content {
+            max-width: 1200px;
+            margin: 0 auto;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 1rem;
+        }
+        
+        .nav a {
+            color: #667eea;
+            text-decoration: none;
+            padding: 0.5rem 1rem;
+            border-radius: 5px;
+            transition: all 0.3s;
+        }
+        
+        .nav a:hover {
+            background: #667eea;
+            color: white;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 2rem auto;
+            padding: 0 1rem;
+        }
+        
+        .description {
+            background: white;
+            padding: 2rem;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+            margin-bottom: 2rem;
+        }
+        
+        .description h2 {
+            color: #667eea;
+            margin-bottom: 1rem;
+            border-bottom: 2px solid #667eea;
+            padding-bottom: 0.5rem;
+        }
+        
+        .description pre {
+            background: #f5f5f5;
+            padding: 1rem;
+            border-radius: 5px;
+            overflow-x: auto;
+        }
+        
+        .file-section {
+            background: white;
+            margin-bottom: 2rem;
+            border-radius: 10px;
+            overflow: hidden;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+        }
+        
+        .file-section h3 {
+            background: #667eea;
+            color: white;
+            padding: 1rem;
+            margin: 0;
+        }
+        
+        .file-section pre {
+            margin: 0;
+            border-radius: 0;
+        }
+        
+        .file-section code {
+            display: block;
+            padding: 1.5rem;
+            max-height: 600px;
+            overflow: auto;
+        }
+        
+        .no-files {
+            text-align: center;
+            padding: 3rem;
+            color: #999;
+            font-style: italic;
+        }
+        
+        @media (max-width: 768px) {
+            .header h1 {
+                font-size: 1.8rem;
+            }
+            
+            .nav-content {
+                flex-direction: column;
+                text-align: center;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>Day 22</h1>
+        <div class="subtitle">GPU Kernels Learning Journey</div>
+    </div>
+    
+    <nav class="nav">
+        <div class="nav-content">
+            <a href="index.html">← Back to Index</a>
+            <div>
+                <a href="day-21.html">← Day 21</a>
+                <a href="day-23.html">Day 23 →</a>
+            </div>
+        </div>
+    </nav>
+    
+    <div class="container">
+        <div class="description">
+            <h2>Description</h2>
+            <div class="desc-content">
+### File: `EM_kernel.cu`
+**Summary:**  
+Developed the Expectation-Maximization (EM) algorithm in CUDA for clustering 1D data into a specified number of clusters. The implementation includes E-step and M-step kernels to maximize the expected likelihood function iteratively.
+
+**Key Components:**
+- **E-step Kernel (`eStepKernel`):**  
+  Calculates the responsibilities (probabilities) of each data point belonging to each cluster based on current parameters (means, standard deviations, mixing coefficients).
+  
+- **M-step Kernel (`mStepKernel`):**  
+  Updates the parameters for each cluster (mean, variance, and mixing coefficients) based on the responsibilities calculated in the E-step.
+
+**Learnings:**  
+- Gained practical experience with CUDA memory management, including data allocation and copying between host and device.  
+- Understood how to implement parallel reduction using atomic operations for accumulating sums across threads in the M-step phase.  
+- Familiarized with Gaussian mixture modeling concepts and the iterative nature of the EM algorithm, enhancing the ability to cluster data points effectively.
+
+---
+
+### Reading:
+- Reviewed relevant literature on Gaussian Mixture Models and the EM algorithm's applications in various domains, including image processing and statistical analysis.  
+
+---
+            </div>
+        </div>
+        
+        <h2 style="margin-bottom: 1rem; color: #667eea;">Code Files</h2>
+
+    <div class="file-section">
+        <h3>EM_kernel.cu</h3>
+        <pre><code class="language-cuda">#include &lt;iostream&gt;
+#include &lt;cmath&gt;
+#include &lt;cstdlib&gt;
+#include &lt;ctime&gt;
+#include &lt;cuda_runtime.h&gt;
+
+#ifndef M_PI
+#define M_PI 3.14159265358979323846
+#endif
+
+// Define number of clusters and data points
+#define NUM_CLUSTERS 2     // number of clusters
+#define N 1024             // number of data points
+#define THREADS_PER_BLOCK 256
+
+// CUDA error checking macro
+#define CUDA_CHECK(call) \
+    do { \
+        cudaError_t error = call; \
+        if (error != cudaSuccess) { \
+            std::cerr &lt;&lt; "CUDA Error: " &lt;&lt; cudaGetErrorString(error) \
+                      &lt;&lt; " at " &lt;&lt; __FILE__ &lt;&lt; ":" &lt;&lt; __LINE__ &lt;&lt; std::endl; \
+            exit(EXIT_FAILURE); \
+        } \
+    } while (0)
+
+// E-step kernel
+__global__ void eStepKernel(float* data, int N, float* mu, float* sigma, 
+                           float* pival, float* responsibilities) {
+    int idx = blockDim.x * blockIdx.x + threadIdx.x;
+    if (idx &lt; N) {
+        float x = data[idx];
+        float probs[NUM_CLUSTERS];
+        float sum = 0.0f;
+        
+        for (int k = 0; k &lt; NUM_CLUSTERS; k++) {
+            float diff = x - mu[k];
+            float exponent = -0.5f * (diff * diff) / (sigma[k] * sigma[k]);
+            float gauss = (1.0f / (sqrtf(2.0f * M_PI) * sigma[k])) * expf(exponent);
+            probs[k] = pival[k] * gauss;
+            sum += probs[k];
+        }
+        
+        for (int k = 0; k &lt; NUM_CLUSTERS; k++) {
+            responsibilities[idx * NUM_CLUSTERS + k] = probs[k] / sum;
+        }
+    }
+}
+
+// M-step kernel
+__global__ void mStepKernel(float* data, int N, float* responsibilities,
+                           float* sum_gamma, float* sum_x, float* sum_x2) {
+    int idx = blockDim.x * blockIdx.x + threadIdx.x;
+    if (idx &lt; N) {
+        float x = data[idx];
+        for (int k = 0; k &lt; NUM_CLUSTERS; k++) {
+            float gamma = responsibilities[idx * NUM_CLUSTERS + k];
+            atomicAdd(&amp;sum_gamma[k], gamma);
+            atomicAdd(&amp;sum_x[k], gamma * x);
+            atomicAdd(&amp;sum_x2[k], gamma * x * x);
+        }
+    }
+}
+
+int main() {
+    // Seed the random number generator
+    srand(static_cast&lt;unsigned&gt;(time(NULL)));
+
+    // Generate synthetic 1D data
+    float h_data[N];
+    for (int i = 0; i &lt; N; i++) {
+        if (i &lt; N/2) {
+            h_data[i] = 2.0f + static_cast&lt;float&gt;(rand()) / RAND_MAX;
+        } else {
+            h_data[i] = 8.0f + static_cast&lt;float&gt;(rand()) / RAND_MAX;
+        }
+    }
+
+    // Initial parameters (host)
+    float h_mu[NUM_CLUSTERS] = {1.0f, 9.0f};           // means
+    float h_sigma[NUM_CLUSTERS] = {1.0f, 1.0f};        // standard deviations
+    float h_pival[NUM_CLUSTERS] = {0.5f, 0.5f};        // mixing coefficients
+
+    // Allocate device memory
+    float *d_data, *d_mu, *d_sigma, *d_pival;
+    float *d_responsibilities, *d_sum_gamma, *d_sum_x, *d_sum_x2;
+
+    CUDA_CHECK(cudaMalloc(&amp;d_data, N * sizeof(float)));
+    CUDA_CHECK(cudaMalloc(&amp;d_mu, NUM_CLUSTERS * sizeof(float)));
+    CUDA_CHECK(cudaMalloc(&amp;d_sigma, NUM_CLUSTERS * sizeof(float)));
+    CUDA_CHECK(cudaMalloc(&amp;d_pival, NUM_CLUSTERS * sizeof(float)));
+    CUDA_CHECK(cudaMalloc(&amp;d_responsibilities, N * NUM_CLUSTERS * sizeof(float)));
+    CUDA_CHECK(cudaMalloc(&amp;d_sum_gamma, NUM_CLUSTERS * sizeof(float)));
+    CUDA_CHECK(cudaMalloc(&amp;d_sum_x, NUM_CLUSTERS * sizeof(float)));
+    CUDA_CHECK(cudaMalloc(&amp;d_sum_x2, NUM_CLUSTERS * sizeof(float)));
+
+    // Copy data and initial parameters to device
+    CUDA_CHECK(cudaMemcpy(d_data, h_data, N * sizeof(float), cudaMemcpyHostToDevice));
+    CUDA_CHECK(cudaMemcpy(d_mu, h_mu, NUM_CLUSTERS * sizeof(float), cudaMemcpyHostToDevice));
+    CUDA_CHECK(cudaMemcpy(d_sigma, h_sigma, NUM_CLUSTERS * sizeof(float), cudaMemcpyHostToDevice));
+    CUDA_CHECK(cudaMemcpy(d_pival, h_pival, NUM_CLUSTERS * sizeof(float), cudaMemcpyHostToDevice));
+
+    // Calculate grid dimensions
+    int blocks = (N + THREADS_PER_BLOCK - 1) / THREADS_PER_BLOCK;
+    
+    // Host arrays for M-step
+    float h_sum_gamma[NUM_CLUSTERS];
+    float h_sum_x[NUM_CLUSTERS];
+    float h_sum_x2[NUM_CLUSTERS];
+
+    // EM iterations
+    int maxIter = 100;
+    for (int iter = 0; iter &lt; maxIter; iter++) {
+        // E-step
+        eStepKernel&lt;&lt;&lt;blocks, THREADS_PER_BLOCK&gt;&gt;&gt;(d_data, N, d_mu, d_sigma, 
+                                                  d_pival, d_responsibilities);
+        CUDA_CHECK(cudaDeviceSynchronize());
+
+        // Reset accumulators
+        CUDA_CHECK(cudaMemset(d_sum_gamma, 0, NUM_CLUSTERS * sizeof(float)));
+        CUDA_CHECK(cudaMemset(d_sum_x, 0, NUM_CLUSTERS * sizeof(float)));
+        CUDA_CHECK(cudaMemset(d_sum_x2, 0, NUM_CLUSTERS * sizeof(float)));
+
+        // M-step accumulation
+        mStepKernel&lt;&lt;&lt;blocks, THREADS_PER_BLOCK&gt;&gt;&gt;(d_data, N, d_responsibilities,
+                                                  d_sum_gamma, d_sum_x, d_sum_x2);
+        CUDA_CHECK(cudaDeviceSynchronize());
+
+        // Copy results back to host
+        CUDA_CHECK(cudaMemcpy(h_sum_gamma, d_sum_gamma, NUM_CLUSTERS * sizeof(float), cudaMemcpyDeviceToHost));
+        CUDA_CHECK(cudaMemcpy(h_sum_x, d_sum_x, NUM_CLUSTERS * sizeof(float), cudaMemcpyDeviceToHost));
+        CUDA_CHECK(cudaMemcpy(h_sum_x2, d_sum_x2, NUM_CLUSTERS * sizeof(float), cudaMemcpyDeviceToHost));
+
+        // Update parameters
+        for (int k = 0; k &lt; NUM_CLUSTERS; k++) {
+            if (h_sum_gamma[k] &gt; 1e-6f) {
+                // Update mean
+                h_mu[k] = h_sum_x[k] / h_sum_gamma[k];
+                
+                // Update variance and standard deviation
+                float variance = h_sum_x2[k] / h_sum_gamma[k] - h_mu[k] * h_mu[k];
+                h_sigma[k] = sqrtf(fmax(variance, 1e-6f));
+                
+                // Update mixing coefficient
+                h_pival[k] = h_sum_gamma[k] / N;
+            }
+        }
+
+        // Copy updated parameters back to device
+        CUDA_CHECK(cudaMemcpy(d_mu, h_mu, NUM_CLUSTERS * sizeof(float), cudaMemcpyHostToDevice));
+        CUDA_CHECK(cudaMemcpy(d_sigma, h_sigma, NUM_CLUSTERS * sizeof(float), cudaMemcpyHostToDevice));
+        CUDA_CHECK(cudaMemcpy(d_pival, h_pival, NUM_CLUSTERS * sizeof(float), cudaMemcpyHostToDevice));
+
+        // Print current parameters
+        if (iter % 10 == 0) {  // Print every 10 iterations
+            std::cout &lt;&lt; "Iteration " &lt;&lt; iter &lt;&lt; ":\n";
+            for (int k = 0; k &lt; NUM_CLUSTERS; k++) {
+                std::cout &lt;&lt; "Cluster " &lt;&lt; k &lt;&lt; ": "
+                         &lt;&lt; "mu = " &lt;&lt; h_mu[k] &lt;&lt; ", "
+                         &lt;&lt; "sigma = " &lt;&lt; h_sigma[k] &lt;&lt; ", "
+                         &lt;&lt; "pi = " &lt;&lt; h_pival[k] &lt;&lt; std::endl;
+            }
+            std::cout &lt;&lt; std::endl;
+        }
+    }
+
+    // Free device memory
+    cudaFree(d_data);
+    cudaFree(d_mu);
+    cudaFree(d_sigma);
+    cudaFree(d_pival);
+    cudaFree(d_responsibilities);
+    cudaFree(d_sum_gamma);
+    cudaFree(d_sum_x);
+    cudaFree(d_sum_x2);
+
+    return 0;
+}
+</code></pre>
+    </div>
+
+    </div>
+    
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-c.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-cpp.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-python.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-markdown.min.js"></script>
+</body>
+</html>

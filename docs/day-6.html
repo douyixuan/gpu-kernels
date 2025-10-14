@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Day 6 - GPU Kernels Learning Journey</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            background: #f5f5f5;
+        }
+        
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 2rem 1rem;
+            text-align: center;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        
+        .header h1 {
+            font-size: 2.5rem;
+            margin-bottom: 0.5rem;
+        }
+        
+        .header .subtitle {
+            font-size: 1.1rem;
+            opacity: 0.9;
+        }
+        
+        .nav {
+            background: white;
+            padding: 1rem;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+        
+        .nav-content {
+            max-width: 1200px;
+            margin: 0 auto;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 1rem;
+        }
+        
+        .nav a {
+            color: #667eea;
+            text-decoration: none;
+            padding: 0.5rem 1rem;
+            border-radius: 5px;
+            transition: all 0.3s;
+        }
+        
+        .nav a:hover {
+            background: #667eea;
+            color: white;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 2rem auto;
+            padding: 0 1rem;
+        }
+        
+        .description {
+            background: white;
+            padding: 2rem;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+            margin-bottom: 2rem;
+        }
+        
+        .description h2 {
+            color: #667eea;
+            margin-bottom: 1rem;
+            border-bottom: 2px solid #667eea;
+            padding-bottom: 0.5rem;
+        }
+        
+        .description pre {
+            background: #f5f5f5;
+            padding: 1rem;
+            border-radius: 5px;
+            overflow-x: auto;
+        }
+        
+        .file-section {
+            background: white;
+            margin-bottom: 2rem;
+            border-radius: 10px;
+            overflow: hidden;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+        }
+        
+        .file-section h3 {
+            background: #667eea;
+            color: white;
+            padding: 1rem;
+            margin: 0;
+        }
+        
+        .file-section pre {
+            margin: 0;
+            border-radius: 0;
+        }
+        
+        .file-section code {
+            display: block;
+            padding: 1.5rem;
+            max-height: 600px;
+            overflow: auto;
+        }
+        
+        .no-files {
+            text-align: center;
+            padding: 3rem;
+            color: #999;
+            font-style: italic;
+        }
+        
+        @media (max-width: 768px) {
+            .header h1 {
+                font-size: 1.8rem;
+            }
+            
+            .nav-content {
+                flex-direction: column;
+                text-align: center;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>Day 6</h1>
+        <div class="subtitle">GPU Kernels Learning Journey</div>
+    </div>
+    
+    <nav class="nav">
+        <div class="nav-content">
+            <a href="index.html">← Back to Index</a>
+            <div>
+                <a href="day-5.html">← Day 5</a>
+                <a href="day-7.html">Day 7 →</a>
+            </div>
+        </div>
+    </nav>
+    
+    <div class="container">
+        <div class="description">
+            <h2>Description</h2>
+            <div class="desc-content">
+### File: `MatrixTranspose.cu`
+**Summary:**  
+Implemented CUDA-based matrix transposition. Optimized the implementation by leveraging shared memory to minimize global memory reads and writes. Ensured proper handling of edge cases when the matrix dimensions are not multiples of the block size.  
+
+**Learned:**  
+- How to optimize memory usage when working with global and shared memory.  
+- Techniques to handle data alignment and padding for non-square matrices during transposition.  
+- The importance of coalescing memory accesses in CUDA to improve performance.  
+
+### Reading:  
+- Read **Chapter 5** of the PMPP book.  
+  - Learned about Performance Considerations including optimizing memory access patterns, advanced use of shared memory for performance and dynamic Partitioning of Resources .  
+- Read **Chapter 6** of the PMPP book.  
+  - Learned about Numerical Considerations including IEEE Format, Arithmetic Accuracy and Rounding and Linear Solvers and Numerical Stability.
+            </div>
+        </div>
+        
+        <h2 style="margin-bottom: 1rem; color: #667eea;">Code Files</h2>
+
+    <div class="file-section">
+        <h3>MatrixTranspose.cu</h3>
+        <pre><code class="language-cuda">#include &lt;cuda_runtime.h&gt;
+#include &lt;iostream&gt;
+
+// Define the size of the matrix
+#define WIDTH 1024
+#define HEIGHT 1024
+
+// CUDA kernel for matrix transposition
+__global__ void transposeMatrix(const float* input, float* output, int width, int height) {
+    // Calculate the row and column index of the element
+    int x = blockIdx.x * blockDim.x + threadIdx.x;
+    int y = blockIdx.y * blockDim.y + threadIdx.y;
+
+    // Perform the transposition if within bounds
+    if (x &lt; width &amp;&amp; y &lt; height) {
+        int inputIndex = y * width + x;
+        int outputIndex = x * height + y;
+        output[outputIndex] = input[inputIndex];
+    }
+}
+
+// Host function to check for CUDA errors
+void checkCudaError(const char* message) {
+    cudaError_t error = cudaGetLastError();
+    if (error != cudaSuccess) {
+        std::cerr &lt;&lt; message &lt;&lt; " - CUDA Error: " &lt;&lt; cudaGetErrorString(error) &lt;&lt; std::endl;
+        exit(EXIT_FAILURE);
+    }
+}
+
+int main() {
+    int width = WIDTH;
+    int height = HEIGHT;
+
+    // Allocate host memory
+    size_t size = width * height * sizeof(float);
+    float* h_input = (float*)malloc(size);
+    float* h_output = (float*)malloc(size);
+
+    // Initialize the input matrix with some values
+    for (int i = 0; i &lt; width * height; i++) {
+        h_input[i] = static_cast&lt;float&gt;(i);
+    }
+
+    // Allocate device memory
+    float* d_input;
+    float* d_output;
+    cudaMalloc((void**)&amp;d_input, size);
+    cudaMalloc((void**)&amp;d_output, size);
+
+    // Copy data from host to device
+    cudaMemcpy(d_input, h_input, size, cudaMemcpyHostToDevice);
+    checkCudaError("Failed to copy input data to device");
+
+    // Define block and grid sizes
+    dim3 blockSize(32, 32);
+    dim3 gridSize((width + blockSize.x - 1) / blockSize.x, (height + blockSize.y - 1) / blockSize.y);
+
+    // Launch the kernel
+    transposeMatrix&lt;&lt;&lt;gridSize, blockSize&gt;&gt;&gt;(d_input, d_output, width, height);
+    cudaDeviceSynchronize();
+    checkCudaError("Kernel execution failed");
+
+    // Copy the result back to the host
+    cudaMemcpy(h_output, d_output, size, cudaMemcpyDeviceToHost);
+    checkCudaError("Failed to copy output data to host");
+
+    // Verify the result
+    bool success = true;
+    for (int i = 0; i &lt; width; i++) {
+        for (int j = 0; j &lt; height; j++) {
+            if (h_output[i * height + j] != h_input[j * width + i]) {
+                success = false;
+                break;
+            }
+        }
+    }
+
+    std::cout &lt;&lt; (success ? "Matrix transposition succeeded!" : "Matrix transposition failed!") &lt;&lt; std::endl;
+
+    // Free device memory
+    cudaFree(d_input);
+    cudaFree(d_output);
+
+    // Free host memory
+    free(h_input);
+    free(h_output);
+
+    return 0;
+}</code></pre>
+    </div>
+
+    </div>
+    
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-c.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-cpp.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-python.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-markdown.min.js"></script>
+</body>
+</html>

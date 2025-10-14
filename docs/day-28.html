@@ -1,0 +1,371 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Day 28 - GPU Kernels Learning Journey</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            background: #f5f5f5;
+        }
+        
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 2rem 1rem;
+            text-align: center;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        
+        .header h1 {
+            font-size: 2.5rem;
+            margin-bottom: 0.5rem;
+        }
+        
+        .header .subtitle {
+            font-size: 1.1rem;
+            opacity: 0.9;
+        }
+        
+        .nav {
+            background: white;
+            padding: 1rem;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+        
+        .nav-content {
+            max-width: 1200px;
+            margin: 0 auto;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 1rem;
+        }
+        
+        .nav a {
+            color: #667eea;
+            text-decoration: none;
+            padding: 0.5rem 1rem;
+            border-radius: 5px;
+            transition: all 0.3s;
+        }
+        
+        .nav a:hover {
+            background: #667eea;
+            color: white;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 2rem auto;
+            padding: 0 1rem;
+        }
+        
+        .description {
+            background: white;
+            padding: 2rem;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+            margin-bottom: 2rem;
+        }
+        
+        .description h2 {
+            color: #667eea;
+            margin-bottom: 1rem;
+            border-bottom: 2px solid #667eea;
+            padding-bottom: 0.5rem;
+        }
+        
+        .description pre {
+            background: #f5f5f5;
+            padding: 1rem;
+            border-radius: 5px;
+            overflow-x: auto;
+        }
+        
+        .file-section {
+            background: white;
+            margin-bottom: 2rem;
+            border-radius: 10px;
+            overflow: hidden;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+        }
+        
+        .file-section h3 {
+            background: #667eea;
+            color: white;
+            padding: 1rem;
+            margin: 0;
+        }
+        
+        .file-section pre {
+            margin: 0;
+            border-radius: 0;
+        }
+        
+        .file-section code {
+            display: block;
+            padding: 1.5rem;
+            max-height: 600px;
+            overflow: auto;
+        }
+        
+        .no-files {
+            text-align: center;
+            padding: 3rem;
+            color: #999;
+            font-style: italic;
+        }
+        
+        @media (max-width: 768px) {
+            .header h1 {
+                font-size: 1.8rem;
+            }
+            
+            .nav-content {
+                flex-direction: column;
+                text-align: center;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>Day 28</h1>
+        <div class="subtitle">GPU Kernels Learning Journey</div>
+    </div>
+    
+    <nav class="nav">
+        <div class="nav-content">
+            <a href="index.html">← Back to Index</a>
+            <div>
+                <a href="day-27.html">← Day 27</a>
+                <a href="day-29.html">Day 29 →</a>
+            </div>
+        </div>
+    </nav>
+    
+    <div class="container">
+        <div class="description">
+            <h2>Description</h2>
+            <div class="desc-content">
+### File: `wavefunction_evolution.cu`
+
+**Summary:**  
+This CUDA implementation simulates the time evolution of a quantum wavefunction using the finite difference method. The program calculates the wavefunction's evolution based on the time-dependent Schrödinger equation in a harmonic potential. 
+
+---
+            </div>
+        </div>
+        
+        <h2 style="margin-bottom: 1rem; color: #667eea;">Code Files</h2>
+
+    <div class="file-section">
+        <h3>wavefunction_evolution.cu</h3>
+        <pre><code class="language-cuda">#include &lt;cuda_runtime.h&gt;
+#include &lt;iostream&gt;
+#include &lt;cmath&gt;
+#include &lt;cuComplex.h&gt;
+
+#define N 1024        // Number of spatial points
+#define DX 0.01       // Spatial step
+#define DT 5e-7       // Reduced time step for better stability
+#define HBAR 1.0      // Planck's constant (normalized)
+#define MASS 1.0      // Particle mass (normalized)
+#define BLOCK_SIZE 256
+
+using complexd = double2;
+
+__host__ __device__ inline complexd make_complexd(double real, double imag) {
+    return make_double2(real, imag);
+}
+
+__host__ __device__ inline complexd complex_add(complexd a, complexd b) {
+    return make_double2(a.x + b.x, a.y + b.y);
+}
+
+__host__ __device__ inline complexd complex_sub(complexd a, complexd b) {
+    return make_double2(a.x - b.x, a.y - b.y);
+}
+
+__host__ __device__ inline complexd complex_mul(double scalar, complexd a) {
+    return make_double2(scalar * a.x, scalar * a.y);
+}
+
+__host__ __device__ inline complexd complex_mul_complex(complexd a, complexd b) {
+    return make_double2(a.x * b.x - a.y * b.y, a.x * b.y + a.y * b.x);
+}
+
+__host__ __device__ inline double complex_norm(complexd a) {
+    return a.x * a.x + a.y * a.y;
+}
+
+__global__ void evolve_wavefunction(complexd *psi, complexd *psi_next, double *potential) {
+    __shared__ complexd shared_psi[BLOCK_SIZE + 2];
+    int i = threadIdx.x + blockIdx.x * blockDim.x;
+    int local_idx = threadIdx.x + 1;
+
+    if (i &lt; N) {
+        shared_psi[local_idx] = psi[i];
+    }
+    if (threadIdx.x == 0) {
+        shared_psi[0] = (i &gt; 0) ? psi[i - 1] : psi[i];
+    }
+    if (threadIdx.x == blockDim.x - 1) {
+        shared_psi[local_idx + 1] = (i &lt; N - 1) ? psi[i + 1] : psi[i];
+    }
+    __syncthreads();
+
+    if (i &gt; 0 &amp;&amp; i &lt; N - 1) {
+        complexd laplacian = complex_sub(complex_add(shared_psi[local_idx - 1], shared_psi[local_idx + 1]),
+                                          complex_mul(2.0, shared_psi[local_idx]));
+        laplacian = complex_mul(1.0 / (DX * DX), laplacian);
+
+        complexd i_hbar = make_complexd(0.0, HBAR);
+        complexd term1 = complex_mul(DT / (2.0 * MASS), complex_mul_complex(i_hbar, laplacian));
+        complexd term2a = complex_mul(potential[i], psi[i]);
+        complexd term2 = complex_mul(DT / HBAR, complex_mul_complex(i_hbar, term2a));
+
+        psi_next[i] = complex_add(complex_sub(psi[i], term1), term2);
+    }
+}
+
+__global__ void normalize_wavefunction(complexd *psi, double *block_sums) {
+    __shared__ double shared_norm[BLOCK_SIZE];
+    int i = threadIdx.x + blockIdx.x * blockDim.x;
+    int tid = threadIdx.x;
+
+    shared_norm[tid] = (i &lt; N) ? complex_norm(psi[i]) : 0.0;
+    __syncthreads();
+
+    for (int s = blockDim.x / 2; s &gt; 0; s &gt;&gt;= 1) {
+        if (tid &lt; s) {
+            shared_norm[tid] += shared_norm[tid + s];
+        }
+        __syncthreads();
+    }
+
+    if (tid == 0) {
+        block_sums[blockIdx.x] = shared_norm[0];
+    }
+}
+
+__global__ void sum_blocks(double *block_sums, int num_blocks, double *norm_factor) {
+    __shared__ double shared_sums[BLOCK_SIZE];
+    int tid = threadIdx.x;
+
+    shared_sums[tid] = (tid &lt; num_blocks) ? block_sums[tid] : 0.0;
+    __syncthreads();
+
+    for (int s = blockDim.x / 2; s &gt; 0; s &gt;&gt;= 1) {
+        if (tid &lt; s) {
+            shared_sums[tid] += shared_sums[tid + s];
+        }
+        __syncthreads();
+    }
+
+    if (tid == 0) {
+        *norm_factor = shared_sums[0];
+    }
+}
+
+__global__ void apply_normalization(complexd *psi, double norm_factor) {
+    int i = threadIdx.x + blockIdx.x * blockDim.x;
+    if (i &lt; N &amp;&amp; norm_factor &gt; 0.0) {
+        double scale = rsqrt(norm_factor);
+        psi[i] = complex_mul(scale, psi[i]);
+    }
+}
+
+int main() {
+    complexd *d_psi, *d_psi_next;
+    double *d_potential, *d_norm_factor, *d_block_sums;
+    complexd h_psi[N];
+    double h_potential[N], h_norm_factor = 0.0;
+    int blocks = (N + BLOCK_SIZE - 1) / BLOCK_SIZE;
+
+    
+    for (int i = 0; i &lt; N; i++) {
+        double x = (i - N / 2) * DX;
+        double envelope = exp(-x * x);
+        h_psi[i] = make_complexd(envelope * cos(5.0 * x), envelope * sin(5.0 * x));
+        h_potential[i] = 0.5 * x * x;
+    }
+
+   
+    cudaMalloc(&amp;d_psi, N * sizeof(complexd));
+    cudaMalloc(&amp;d_psi_next, N * sizeof(complexd));
+    cudaMalloc(&amp;d_potential, N * sizeof(double));
+    cudaMalloc(&amp;d_norm_factor, sizeof(double));
+    cudaMalloc(&amp;d_block_sums, blocks * sizeof(double));
+
+    cudaMemcpy(d_psi, h_psi, N * sizeof(complexd), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_potential, h_potential, N * sizeof(double), cudaMemcpyHostToDevice);
+
+    int threads = BLOCK_SIZE;
+
+    for (int t = 0; t &lt; 1000; t++) {
+        evolve_wavefunction&lt;&lt;&lt;blocks, threads&gt;&gt;&gt;(d_psi, d_psi_next, d_potential);
+        cudaDeviceSynchronize();
+
+        complexd *temp = d_psi;
+        d_psi = d_psi_next;
+        d_psi_next = temp;
+
+        if (t % 100 == 0) {
+            normalize_wavefunction&lt;&lt;&lt;blocks, threads&gt;&gt;&gt;(d_psi, d_block_sums);
+            cudaDeviceSynchronize();
+
+            cudaMemset(d_norm_factor, 0, sizeof(double));
+            sum_blocks&lt;&lt;&lt;1, threads&gt;&gt;&gt;(d_block_sums, blocks, d_norm_factor);
+            cudaDeviceSynchronize();
+
+            cudaMemcpy(&amp;h_norm_factor, d_norm_factor, sizeof(double), cudaMemcpyDeviceToHost);
+            apply_normalization&lt;&lt;&lt;blocks, threads&gt;&gt;&gt;(d_psi, h_norm_factor);
+            cudaDeviceSynchronize();
+        }
+    }
+
+    cudaMemcpy(h_psi, d_psi, N * sizeof(complexd), cudaMemcpyDeviceToHost);
+
+  
+    cudaFree(d_psi);
+    cudaFree(d_psi_next);
+    cudaFree(d_potential);
+    cudaFree(d_norm_factor);
+    cudaFree(d_block_sums);
+
+    for (int i = 0; i &lt; N; i += N / 10) {
+        std::cout &lt;&lt; "x: " &lt;&lt; (i - N / 2) * DX 
+                  &lt;&lt; " | Psi: (" &lt;&lt; h_psi[i].x &lt;&lt; ", " &lt;&lt; h_psi[i].y &lt;&lt; ")\n";
+    }
+
+    return 0;
+}
+
+</code></pre>
+    </div>
+
+    </div>
+    
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-c.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-cpp.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-python.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-markdown.min.js"></script>
+</body>
+</html>

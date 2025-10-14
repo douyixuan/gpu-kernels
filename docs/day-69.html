@@ -1,0 +1,319 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Day 69 - GPU Kernels Learning Journey</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            background: #f5f5f5;
+        }
+        
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 2rem 1rem;
+            text-align: center;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        
+        .header h1 {
+            font-size: 2.5rem;
+            margin-bottom: 0.5rem;
+        }
+        
+        .header .subtitle {
+            font-size: 1.1rem;
+            opacity: 0.9;
+        }
+        
+        .nav {
+            background: white;
+            padding: 1rem;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+        
+        .nav-content {
+            max-width: 1200px;
+            margin: 0 auto;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 1rem;
+        }
+        
+        .nav a {
+            color: #667eea;
+            text-decoration: none;
+            padding: 0.5rem 1rem;
+            border-radius: 5px;
+            transition: all 0.3s;
+        }
+        
+        .nav a:hover {
+            background: #667eea;
+            color: white;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 2rem auto;
+            padding: 0 1rem;
+        }
+        
+        .description {
+            background: white;
+            padding: 2rem;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+            margin-bottom: 2rem;
+        }
+        
+        .description h2 {
+            color: #667eea;
+            margin-bottom: 1rem;
+            border-bottom: 2px solid #667eea;
+            padding-bottom: 0.5rem;
+        }
+        
+        .description pre {
+            background: #f5f5f5;
+            padding: 1rem;
+            border-radius: 5px;
+            overflow-x: auto;
+        }
+        
+        .file-section {
+            background: white;
+            margin-bottom: 2rem;
+            border-radius: 10px;
+            overflow: hidden;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+        }
+        
+        .file-section h3 {
+            background: #667eea;
+            color: white;
+            padding: 1rem;
+            margin: 0;
+        }
+        
+        .file-section pre {
+            margin: 0;
+            border-radius: 0;
+        }
+        
+        .file-section code {
+            display: block;
+            padding: 1.5rem;
+            max-height: 600px;
+            overflow: auto;
+        }
+        
+        .no-files {
+            text-align: center;
+            padding: 3rem;
+            color: #999;
+            font-style: italic;
+        }
+        
+        @media (max-width: 768px) {
+            .header h1 {
+                font-size: 1.8rem;
+            }
+            
+            .nav-content {
+                flex-direction: column;
+                text-align: center;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>Day 69</h1>
+        <div class="subtitle">GPU Kernels Learning Journey</div>
+    </div>
+    
+    <nav class="nav">
+        <div class="nav-content">
+            <a href="index.html">← Back to Index</a>
+            <div>
+                <a href="day-68.html">← Day 68</a>
+                <a href="day-70.html">Day 70 →</a>
+            </div>
+        </div>
+    </nav>
+    
+    <div class="container">
+        <div class="description">
+            <h2>Description</h2>
+            <div class="desc-content">
+### Files: `k_means_leetgpu.cu`
+Today, I implemented a CUDA-accelerated K-Means Clustering for 2D data points as part of the newly added hard challenge on LeetGPU.
+            </div>
+        </div>
+        
+        <h2 style="margin-bottom: 1rem; color: #667eea;">Code Files</h2>
+
+    <div class="file-section">
+        <h3>k_means_leetgpu.cu</h3>
+        <pre><code class="language-cuda">#include "solve.h"
+#include &lt;cuda_runtime.h&gt;
+#include &lt;math.h&gt;
+#include &lt;stdio.h&gt;
+
+
+__global__ void assign_and_accumulate(const float* data_x, const float* data_y,
+                                      const float* centroid_x, const float* centroid_y,
+                                      int* labels, float* sum_x, float* sum_y, int* count,
+                                      int sample_size, int k) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx &gt;= sample_size) return;
+    
+    float x = data_x[idx];
+    float y = data_y[idx];
+    float minDist = 1e20f;
+    int best = 0;
+ 
+    for (int i = 0; i &lt; k; i++) {
+        float dx = x - centroid_x[i];
+        float dy = y - centroid_y[i];
+        float dist = dx * dx + dy * dy;
+        if (dist &lt; minDist) {
+            minDist = dist;
+            best = i;
+        }
+    }
+    labels[idx] = best;
+
+    atomicAdd(&amp;sum_x[best], x);
+    atomicAdd(&amp;sum_y[best], y);
+    atomicAdd(&amp;count[best], 1);
+}
+
+
+__global__ void update_centroids(float* centroid_x, float* centroid_y,
+                                 const float* sum_x, const float* sum_y, const int* count,
+                                 int k) {
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i &gt;= k) return;
+    
+   
+    if (count[i] &gt; 0) {
+        centroid_x[i] = sum_x[i] / count[i];
+        centroid_y[i] = sum_y[i] / count[i];
+    }
+}
+
+void solve(const float* data_x, const float* data_y, int* labels,
+           float* initial_centroid_x, float* initial_centroid_y,
+           float* final_centroid_x, float* final_centroid_y,
+           int sample_size, int k, int max_iterations) {
+
+    
+    float *d_sum_x, *d_sum_y;
+    int *d_count;
+    cudaMalloc(&amp;d_sum_x, k * sizeof(float));
+    cudaMalloc(&amp;d_sum_y, k * sizeof(float));
+    cudaMalloc(&amp;d_count, k * sizeof(int));
+
+    
+    float *d_old_centroid_x, *d_old_centroid_y;
+    cudaMalloc(&amp;d_old_centroid_x, k * sizeof(float));
+    cudaMalloc(&amp;d_old_centroid_y, k * sizeof(float));
+
+    
+    float host_old_x[128], host_old_y[128], host_new_x[128], host_new_y[128];
+
+    const float threshold = 0.0001f;
+
+    
+    int threadsPerBlock = 256;
+    int blocksPerGrid = (sample_size + threadsPerBlock - 1) / threadsPerBlock;
+
+    
+    int threadsPerBlockCent = 256;
+    int blocksPerGridCent = (k + threadsPerBlockCent - 1) / threadsPerBlockCent;
+
+    for (int iter = 0; iter &lt; max_iterations; iter++) {
+        
+        cudaMemset(d_sum_x, 0, k * sizeof(float));
+        cudaMemset(d_sum_y, 0, k * sizeof(float));
+        cudaMemset(d_count, 0, k * sizeof(int));
+
+       
+        assign_and_accumulate&lt;&lt;&lt;blocksPerGrid, threadsPerBlock&gt;&gt;&gt;(data_x, data_y,
+                                                                  initial_centroid_x, initial_centroid_y,
+                                                                  labels, d_sum_x, d_sum_y, d_count,
+                                                                  sample_size, k);
+        cudaDeviceSynchronize();
+
+      
+        cudaMemcpy(d_old_centroid_x, initial_centroid_x, k * sizeof(float), cudaMemcpyDeviceToDevice);
+        cudaMemcpy(d_old_centroid_y, initial_centroid_y, k * sizeof(float), cudaMemcpyDeviceToDevice);
+
+        
+        update_centroids&lt;&lt;&lt;blocksPerGridCent, threadsPerBlockCent&gt;&gt;&gt;(initial_centroid_x, initial_centroid_y,
+                                                                      d_sum_x, d_sum_y, d_count, k);
+        cudaDeviceSynchronize();
+
+        
+        cudaMemcpy(host_old_x, d_old_centroid_x, k * sizeof(float), cudaMemcpyDeviceToHost);
+        cudaMemcpy(host_old_y, d_old_centroid_y, k * sizeof(float), cudaMemcpyDeviceToHost);
+        cudaMemcpy(host_new_x, initial_centroid_x, k * sizeof(float), cudaMemcpyDeviceToHost);
+        cudaMemcpy(host_new_y, initial_centroid_y, k * sizeof(float), cudaMemcpyDeviceToHost);
+
+      
+        bool converged = true;
+        for (int i = 0; i &lt; k; i++) {
+            float dx = host_new_x[i] - host_old_x[i];
+            float dy = host_new_y[i] - host_old_y[i];
+            float distance = sqrtf(dx * dx + dy * dy);
+            if (distance &gt;= threshold) {
+                converged = false;
+                break;
+            }
+        }
+        if (converged) {
+            break;
+        }
+    }
+
+
+    cudaMemcpy(final_centroid_x, initial_centroid_x, k * sizeof(float), cudaMemcpyDeviceToDevice);
+    cudaMemcpy(final_centroid_y, initial_centroid_y, k * sizeof(float), cudaMemcpyDeviceToDevice);
+
+
+    cudaFree(d_sum_x);
+    cudaFree(d_sum_y);
+    cudaFree(d_count);
+    cudaFree(d_old_centroid_x);
+    cudaFree(d_old_centroid_y);
+}
+</code></pre>
+    </div>
+
+    </div>
+    
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-c.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-cpp.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-python.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-markdown.min.js"></script>
+</body>
+</html>

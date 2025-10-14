@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Day 99 - GPU Kernels Learning Journey</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            background: #f5f5f5;
+        }
+        
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 2rem 1rem;
+            text-align: center;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        
+        .header h1 {
+            font-size: 2.5rem;
+            margin-bottom: 0.5rem;
+        }
+        
+        .header .subtitle {
+            font-size: 1.1rem;
+            opacity: 0.9;
+        }
+        
+        .nav {
+            background: white;
+            padding: 1rem;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+        
+        .nav-content {
+            max-width: 1200px;
+            margin: 0 auto;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 1rem;
+        }
+        
+        .nav a {
+            color: #667eea;
+            text-decoration: none;
+            padding: 0.5rem 1rem;
+            border-radius: 5px;
+            transition: all 0.3s;
+        }
+        
+        .nav a:hover {
+            background: #667eea;
+            color: white;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 2rem auto;
+            padding: 0 1rem;
+        }
+        
+        .description {
+            background: white;
+            padding: 2rem;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+            margin-bottom: 2rem;
+        }
+        
+        .description h2 {
+            color: #667eea;
+            margin-bottom: 1rem;
+            border-bottom: 2px solid #667eea;
+            padding-bottom: 0.5rem;
+        }
+        
+        .description pre {
+            background: #f5f5f5;
+            padding: 1rem;
+            border-radius: 5px;
+            overflow-x: auto;
+        }
+        
+        .file-section {
+            background: white;
+            margin-bottom: 2rem;
+            border-radius: 10px;
+            overflow: hidden;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+        }
+        
+        .file-section h3 {
+            background: #667eea;
+            color: white;
+            padding: 1rem;
+            margin: 0;
+        }
+        
+        .file-section pre {
+            margin: 0;
+            border-radius: 0;
+        }
+        
+        .file-section code {
+            display: block;
+            padding: 1.5rem;
+            max-height: 600px;
+            overflow: auto;
+        }
+        
+        .no-files {
+            text-align: center;
+            padding: 3rem;
+            color: #999;
+            font-style: italic;
+        }
+        
+        @media (max-width: 768px) {
+            .header h1 {
+                font-size: 1.8rem;
+            }
+            
+            .nav-content {
+                flex-direction: column;
+                text-align: center;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>Day 99</h1>
+        <div class="subtitle">GPU Kernels Learning Journey</div>
+    </div>
+    
+    <nav class="nav">
+        <div class="nav-content">
+            <a href="index.html">← Back to Index</a>
+            <div>
+                <a href="day-98.html">← Day 98</a>
+                <a href="day-100.html">Day 100 →</a>
+            </div>
+        </div>
+    </nav>
+    
+    <div class="container">
+        <div class="description">
+            <h2>Description</h2>
+            <div class="desc-content">
+### Files: `GEMM_Bias_ReLU.cu`
+I implemented a code that performs a matrix multiplication followed by bias addition and ReLU activation.
+            </div>
+        </div>
+        
+        <h2 style="margin-bottom: 1rem; color: #667eea;">Code Files</h2>
+
+    <div class="file-section">
+        <h3>GEMM_Bias_ReLU.cu</h3>
+        <pre><code class="language-cuda">#include &lt;cuda_runtime.h&gt;
+
+constexpr int TILE_M = 32;   
+constexpr int TILE_B = 32;  
+constexpr int TILE_K = 16;   
+
+constexpr int THREADS_X = 16;  
+constexpr int THREADS_Y = 16;  
+
+static_assert(TILE_M  % (THREADS_X * 2) == 0, "TILE_M must be 2×THREADS_X");
+static_assert(TILE_B  % (THREADS_Y * 2) == 0, "TILE_B must be 2×THREADS_Y");
+
+
+#define REG_TILE_B 2
+#define REG_TILE_M 2
+
+
+__launch_bounds__(THREADS_X * THREADS_Y, 4)
+__global__ void gemm_bias_relu(
+    const float* __restrict__ A,   
+    const float* __restrict__ W,   
+    const float* __restrict__ b,   
+          float*       C,         
+    size_t B, size_t N, size_t M)
+{
+   
+    int block_row = blockIdx.y;
+    int block_col = blockIdx.x;
+
+   
+    float acc[REG_TILE_B][REG_TILE_M] = { {0.0f, 0.0f},
+                                          {0.0f, 0.0f} };
+
+   
+    int tx = threadIdx.x;  
+    int ty = threadIdx.y;  
+    int local_m0 = 2 * tx; 
+    int local_b0 = 2 * ty; 
+
+ 
+    __shared__ float sA[TILE_B][TILE_K];
+    __shared__ float sW[TILE_K][TILE_M];
+
+
+    for (int k0 = 0; k0 &lt; (int)N; k0 += TILE_K) {
+
+        int flatId = ty * THREADS_X + tx;
+        #pragma unroll
+        for (int i = 0; i &lt; 2; ++i) {
+            int idx = flatId + i * (THREADS_X*THREADS_Y);
+            
+            int a_row = idx / TILE_K;
+            int a_col = idx % TILE_K;
+            int global_row = block_row * TILE_B + a_row;
+            int global_col = k0       + a_col;
+            float a_val = 0.0f;
+            if (global_row &lt; (int)B &amp;&amp; global_col &lt; (int)N)
+                a_val = __ldg(&amp;A[ global_row * N + global_col ]);
+            sA[a_row][a_col] = a_val;
+
+            int w_id = idx;
+            int w_row = w_id / TILE_M;    
+            int w_col = w_id % TILE_M;    
+            int global_m = block_col * TILE_M + w_col;
+            int global_k = k0            + w_row;
+            float w_val = 0.0f;
+            if (global_m &lt; (int)M &amp;&amp; global_k &lt; (int)N)
+                w_val = __ldg(&amp;W[ global_m * N + global_k ]);
+            sW[w_row][w_col] = w_val;
+        }
+        __syncthreads();
+
+        #pragma unroll
+        for (int kk = 0; kk &lt; TILE_K; ++kk) {
+            float a_reg[REG_TILE_B];
+            a_reg[0] = sA[ local_b0 + 0 ][ kk ];
+            a_reg[1] = sA[ local_b0 + 1 ][ kk ];
+            float w_reg[REG_TILE_M];
+            w_reg[0] = sW[ kk ][ local_m0 + 0 ];
+            w_reg[1] = sW[ kk ][ local_m0 + 1 ];
+
+            acc[0][0] += a_reg[0] * w_reg[0];
+            acc[0][1] += a_reg[0] * w_reg[1];
+            acc[1][0] += a_reg[1] * w_reg[0];
+            acc[1][1] += a_reg[1] * w_reg[1];
+        }
+        __syncthreads();
+    }
+
+    int base_row = block_row * TILE_B;
+    int base_col = block_col * TILE_M;
+    #pragma unroll
+    for (int i = 0; i &lt; REG_TILE_B; ++i) {
+        int r = base_row + local_b0 + i;
+        if (r &gt;= (int)B) continue;
+        #pragma unroll
+        for (int j = 0; j &lt; REG_TILE_M; ++j) {
+            int c = base_col + local_m0 + j;
+            if (c &gt;= (int)M) continue;
+            float v = acc[i][j] + b[c];
+            
+            C[r * M + c] = v &gt; 0.0f ? v : 0.0f;
+        }
+    }
+}
+
+
+extern "C" void solution(
+    const float* A, const float* W, const float* b,
+          float* C,
+    size_t B, size_t N, size_t M)
+{
+    dim3 blockDim(THREADS_X, THREADS_Y);
+    dim3 gridDim( (M + TILE_M - 1) / TILE_M,
+                  (B + TILE_B - 1) / TILE_B );
+    
+    gemm_bias_relu&lt;&lt;&lt;gridDim, blockDim&gt;&gt;&gt;(A, W, b, C, B, N, M);
+    
+}
+</code></pre>
+    </div>
+
+    </div>
+    
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-c.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-cpp.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-python.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-markdown.min.js"></script>
+</body>
+</html>

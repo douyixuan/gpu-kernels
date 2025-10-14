@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Day 35 - GPU Kernels Learning Journey</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            background: #f5f5f5;
+        }
+        
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 2rem 1rem;
+            text-align: center;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        
+        .header h1 {
+            font-size: 2.5rem;
+            margin-bottom: 0.5rem;
+        }
+        
+        .header .subtitle {
+            font-size: 1.1rem;
+            opacity: 0.9;
+        }
+        
+        .nav {
+            background: white;
+            padding: 1rem;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+        
+        .nav-content {
+            max-width: 1200px;
+            margin: 0 auto;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 1rem;
+        }
+        
+        .nav a {
+            color: #667eea;
+            text-decoration: none;
+            padding: 0.5rem 1rem;
+            border-radius: 5px;
+            transition: all 0.3s;
+        }
+        
+        .nav a:hover {
+            background: #667eea;
+            color: white;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 2rem auto;
+            padding: 0 1rem;
+        }
+        
+        .description {
+            background: white;
+            padding: 2rem;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+            margin-bottom: 2rem;
+        }
+        
+        .description h2 {
+            color: #667eea;
+            margin-bottom: 1rem;
+            border-bottom: 2px solid #667eea;
+            padding-bottom: 0.5rem;
+        }
+        
+        .description pre {
+            background: #f5f5f5;
+            padding: 1rem;
+            border-radius: 5px;
+            overflow-x: auto;
+        }
+        
+        .file-section {
+            background: white;
+            margin-bottom: 2rem;
+            border-radius: 10px;
+            overflow: hidden;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+        }
+        
+        .file-section h3 {
+            background: #667eea;
+            color: white;
+            padding: 1rem;
+            margin: 0;
+        }
+        
+        .file-section pre {
+            margin: 0;
+            border-radius: 0;
+        }
+        
+        .file-section code {
+            display: block;
+            padding: 1.5rem;
+            max-height: 600px;
+            overflow: auto;
+        }
+        
+        .no-files {
+            text-align: center;
+            padding: 3rem;
+            color: #999;
+            font-style: italic;
+        }
+        
+        @media (max-width: 768px) {
+            .header h1 {
+                font-size: 1.8rem;
+            }
+            
+            .nav-content {
+                flex-direction: column;
+                text-align: center;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>Day 35</h1>
+        <div class="subtitle">GPU Kernels Learning Journey</div>
+    </div>
+    
+    <nav class="nav">
+        <div class="nav-content">
+            <a href="index.html">← Back to Index</a>
+            <div>
+                <a href="day-34.html">← Day 34</a>
+                <a href="day-36.html">Day 36 →</a>
+            </div>
+        </div>
+    </nav>
+    
+    <div class="container">
+        <div class="description">
+            <h2>Description</h2>
+            <div class="desc-content">
+### Files: `3_body_problem.cu`
+Implemented a CUDA-based simulation of the Three-Body Problem, a classical physics problem describing the motion of three celestial bodies under mutual gravitational influence.
+            </div>
+        </div>
+        
+        <h2 style="margin-bottom: 1rem; color: #667eea;">Code Files</h2>
+
+    <div class="file-section">
+        <h3>3_body_problem.cu</h3>
+        <pre><code class="language-cuda">#include &lt;cuda_runtime.h&gt;
+#include &lt;iostream&gt;
+#include &lt;cmath&gt;
+
+#define G 6.67430e-11  // Gravitational constant
+#define DT 1e-3        // Time step
+#define STEPS 1000     // Simulation steps
+
+struct Body {
+    float3 position;
+    float3 velocity;
+    float mass;
+};
+
+__device__ float3 computeAcceleration(Body* bodies, int id) {
+    float3 acc = {0.0f, 0.0f, 0.0f};
+
+    for (int i = 0; i &lt; 3; i++) {
+        if (i != id) {
+            float3 r;
+            r.x = bodies[i].position.x - bodies[id].position.x;
+            r.y = bodies[i].position.y - bodies[id].position.y;
+            r.z = bodies[i].position.z - bodies[id].position.z;
+
+            float distSq = r.x * r.x + r.y * r.y + r.z * r.z + 1e-9;  // Avoid division by zero
+            float dist = sqrtf(distSq);
+            float force = G * bodies[i].mass / distSq;
+
+            acc.x += force * r.x / dist;
+            acc.y += force * r.y / dist;
+            acc.z += force * r.z / dist;
+        }
+    }
+    return acc;
+}
+
+__global__ void updateBodies(Body* d_bodies) {
+    int id = threadIdx.x;
+
+    if (id &lt; 3) {
+        float3 acc = computeAcceleration(d_bodies, id);
+
+        d_bodies[id].velocity.x += acc.x * DT;
+        d_bodies[id].velocity.y += acc.y * DT;
+        d_bodies[id].velocity.z += acc.z * DT;
+
+        d_bodies[id].position.x += d_bodies[id].velocity.x * DT;
+        d_bodies[id].position.y += d_bodies[id].velocity.y * DT;
+        d_bodies[id].position.z += d_bodies[id].velocity.z * DT;
+    }
+}
+
+void simulate() {
+    Body h_bodies[3] = {
+        {{-1.0f, 0.0f, 0.0f}, {0.0f, -0.5f, 0.0f}, 1.0e10f},
+        {{1.0f, 0.0f, 0.0f}, {0.0f, 0.5f, 0.0f}, 1.0e10f},
+        {{0.0f, 1.0f, 0.0f}, {0.5f, 0.0f, 0.0f}, 1.0e10f}
+    };
+
+    Body* d_bodies;
+    cudaMalloc((void**)&amp;d_bodies, sizeof(h_bodies));
+    cudaMemcpy(d_bodies, h_bodies, sizeof(h_bodies), cudaMemcpyHostToDevice);
+
+    for (int i = 0; i &lt; STEPS; i++) {
+        updateBodies&lt;&lt;&lt;1, 3&gt;&gt;&gt;(d_bodies);
+        cudaDeviceSynchronize();
+    }
+
+    cudaMemcpy(h_bodies, d_bodies, sizeof(h_bodies), cudaMemcpyDeviceToHost);
+    cudaFree(d_bodies);
+
+    std::cout &lt;&lt; "Final Positions:\n";
+    for (int i = 0; i &lt; 3; i++) {
+        std::cout &lt;&lt; "Body " &lt;&lt; i &lt;&lt; ": (" &lt;&lt; h_bodies[i].position.x &lt;&lt; ", " 
+                  &lt;&lt; h_bodies[i].position.y &lt;&lt; ", " &lt;&lt; h_bodies[i].position.z &lt;&lt; ")\n";
+    }
+}
+
+int main() {
+    simulate();
+    return 0;
+}
+</code></pre>
+    </div>
+
+    </div>
+    
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-c.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-cpp.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-python.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-markdown.min.js"></script>
+</body>
+</html>

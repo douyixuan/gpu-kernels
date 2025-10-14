@@ -1,0 +1,374 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Day 16 - GPU Kernels Learning Journey</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            background: #f5f5f5;
+        }
+        
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 2rem 1rem;
+            text-align: center;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        
+        .header h1 {
+            font-size: 2.5rem;
+            margin-bottom: 0.5rem;
+        }
+        
+        .header .subtitle {
+            font-size: 1.1rem;
+            opacity: 0.9;
+        }
+        
+        .nav {
+            background: white;
+            padding: 1rem;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+        
+        .nav-content {
+            max-width: 1200px;
+            margin: 0 auto;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 1rem;
+        }
+        
+        .nav a {
+            color: #667eea;
+            text-decoration: none;
+            padding: 0.5rem 1rem;
+            border-radius: 5px;
+            transition: all 0.3s;
+        }
+        
+        .nav a:hover {
+            background: #667eea;
+            color: white;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 2rem auto;
+            padding: 0 1rem;
+        }
+        
+        .description {
+            background: white;
+            padding: 2rem;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+            margin-bottom: 2rem;
+        }
+        
+        .description h2 {
+            color: #667eea;
+            margin-bottom: 1rem;
+            border-bottom: 2px solid #667eea;
+            padding-bottom: 0.5rem;
+        }
+        
+        .description pre {
+            background: #f5f5f5;
+            padding: 1rem;
+            border-radius: 5px;
+            overflow-x: auto;
+        }
+        
+        .file-section {
+            background: white;
+            margin-bottom: 2rem;
+            border-radius: 10px;
+            overflow: hidden;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+        }
+        
+        .file-section h3 {
+            background: #667eea;
+            color: white;
+            padding: 1rem;
+            margin: 0;
+        }
+        
+        .file-section pre {
+            margin: 0;
+            border-radius: 0;
+        }
+        
+        .file-section code {
+            display: block;
+            padding: 1.5rem;
+            max-height: 600px;
+            overflow: auto;
+        }
+        
+        .no-files {
+            text-align: center;
+            padding: 3rem;
+            color: #999;
+            font-style: italic;
+        }
+        
+        @media (max-width: 768px) {
+            .header h1 {
+                font-size: 1.8rem;
+            }
+            
+            .nav-content {
+                flex-direction: column;
+                text-align: center;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>Day 16</h1>
+        <div class="subtitle">GPU Kernels Learning Journey</div>
+    </div>
+    
+    <nav class="nav">
+        <div class="nav-content">
+            <a href="index.html">← Back to Index</a>
+            <div>
+                <a href="day-15.html">← Day 15</a>
+                <a href="day-17.html">Day 17 →</a>
+            </div>
+        </div>
+    </nav>
+    
+    <div class="container">
+        <div class="description">
+            <h2>Description</h2>
+            <div class="desc-content">
+<p>No description available for this day.</p>
+            </div>
+        </div>
+        
+        <h2 style="margin-bottom: 1rem; color: #667eea;">Code Files</h2>
+
+    <div class="file-section">
+        <h3>NaiveBayesTrain.cuh</h3>
+        <pre><code class="language-cuda">// NaiveBayesTrain.cuh
+#ifndef NAIVE_BAYES_TRAIN_CUH
+#define NAIVE_BAYES_TRAIN_CUH
+
+void trainNaiveBayes(
+    int* h_Dataset, int* h_priors, int* h_likelihoods,
+    int numSamples, int numFeatures, int numClasses, int numFeatureValues
+);
+
+#endif
+</code></pre>
+    </div>
+
+    <div class="file-section">
+        <h3>NaiveBayes.cu</h3>
+        <pre><code class="language-cuda">// NaiveBayes.cu
+#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+#include &lt;cuda_runtime.h&gt;
+#include &lt;device_launch_parameters.h&gt;
+#include "NaiveBayesKernel.cuh"
+#include "NaiveBayesTrain.cuh"
+
+#define SHARED_SIZE 20
+
+// CUDA Kernel to compute priors (P(Y = c)) and likelihoods (P(X | Y = c)).
+__global__ void computePriorsAndLikelihood(
+    int* d_Dataset, int* d_priors, int* d_likelihoods,
+    int numSamples, int numFeatures, int numClasses, int numFeatureValues
+) {
+    int threadId = blockIdx.x * blockDim.x + threadIdx.x;
+
+    __shared__ int local_d_priors[SHARED_SIZE];
+    __shared__ int local_d_likelihoods[SHARED_SIZE];
+
+    // If the thread is within bounds
+    if (threadId &lt; numSamples) {
+        // Each thread processes one data sample
+        int classLabel = d_Dataset[threadId * (numFeatures + 1) + numFeatures]; // Class label is in the last column
+
+        // Atomic update to calculate the prior
+        atomicAdd(&amp;local_d_priors[classLabel], 1);
+
+        // Compute likelihood for each feature
+        for (int fIdx = 0; fIdx &lt; numFeatures; ++fIdx) {
+            int featureValue = d_Dataset[threadId * (numFeatures + 1) + fIdx];
+            int likelihoodIndex = classLabel * numFeatures * numFeatureValues + (fIdx * numFeatureValues) + featureValue;
+
+            // Atomic update to the likelihood matrix
+            atomicAdd(&amp;local_d_likelihoods[likelihoodIndex], 1);
+        }
+    }
+
+    // Synchronize threads before writing shared results back to global memory
+    __syncthreads();
+
+    // Write local results to global memory (only one thread needs to do this)
+    if (threadIdx.x == 0) {
+        for (int c = 0; c &lt; numClasses; ++c) {
+            atomicAdd(&amp;d_priors[c], local_d_priors[c]);
+        }
+
+        for (int l = 0; l &lt; numClasses * numFeatures * numFeatureValues; ++l) {
+            atomicAdd(&amp;d_likelihoods[l], local_d_likelihoods[l]);
+        }
+    }
+}
+</code></pre>
+    </div>
+
+    <div class="file-section">
+        <h3>NaiveBayesKernel.cuh</h3>
+        <pre><code class="language-cuda">// NaiveBayesKernel.cuh
+#ifndef NAIVE_BAYES_KERNEL_CUH
+#define NAIVE_BAYES_KERNEL_CUH
+
+__global__ void computePriorsAndLikelihood(
+    int* d_Dataset, int* d_priors, int* d_likelihoods,
+    int numSamples, int numFeatures, int numClasses, int numFeatureValues
+);
+
+#endif
+</code></pre>
+    </div>
+
+    <div class="file-section">
+        <h3>NaiveBayesTrain.cpp</h3>
+        <pre><code class="language-cpp">// NaiveBayesTrain.cpp
+#include &lt;cuda_runtime.h&gt;
+#include "NaiveBayesTrain.cuh"
+#include "NaiveBayesKernel.cuh"
+
+void trainNaiveBayes(
+    int* h_Dataset, int* h_priors, int* h_likelihoods,
+    int numSamples, int numFeatures, int numClasses, int numFeatureValues
+) {
+    // Device pointers
+    int* d_Dataset;
+    int* d_priors;
+    int* d_likelihoods;
+
+    // Allocate memory on the GPU
+    int datasetSize = numSamples * (numFeatures + 1) * sizeof(int); // +1 for the class label
+    int priorsSize = numClasses * sizeof(int);
+    int likelihoodsSize = numClasses * numFeatures * numFeatureValues * sizeof(int);
+
+    cudaMalloc((void**)&amp;d_Dataset, datasetSize);
+    cudaMalloc((void**)&amp;d_priors, priorsSize);
+    cudaMalloc((void**)&amp;d_likelihoods, likelihoodsSize);
+
+    // Copy data from host to device
+    cudaMemcpy(d_Dataset, h_Dataset, datasetSize, cudaMemcpyHostToDevice);
+    cudaMemcpy(d_priors, h_priors, priorsSize, cudaMemcpyHostToDevice);
+    cudaMemcpy(d_likelihoods, h_likelihoods, likelihoodsSize, cudaMemcpyHostToDevice);
+
+    // Number of threads and blocks
+    int threadsPerBlock = 256;
+    int numBlocks = (numSamples + threadsPerBlock - 1) / threadsPerBlock;
+
+    // Launch the CUDA kernel
+    computePriorsAndLikelihood&lt;&lt;&lt;numBlocks, threadsPerBlock&gt;&gt;&gt;( 
+        d_Dataset, d_priors, d_likelihoods,
+        numSamples, numFeatures, numClasses, numFeatureValues
+    );
+
+    // Copy results back from device to host
+    cudaMemcpy(h_priors, d_priors, priorsSize, cudaMemcpyDeviceToHost);
+    cudaMemcpy(h_likelihoods, d_likelihoods, likelihoodsSize, cudaMemcpyDeviceToHost);
+
+    // Free GPU memory
+    cudaFree(d_Dataset);
+    cudaFree(d_priors);
+    cudaFree(d_likelihoods);
+}
+</code></pre>
+    </div>
+
+    <div class="file-section">
+        <h3>main.cpp</h3>
+        <pre><code class="language-cpp">// main.cpp
+#include &lt;stdio.h&gt;
+#include "NaiveBayesTrain.cuh"
+
+int main() {
+    // Example Dataset: Each row is a sample with features, last column is the class label
+    const int numSamples = 6;
+    const int numFeatures = 2;
+    const int numClasses = 2;
+    const int numFeatureValues = 3; // Assuming features can take values 0, 1, 2
+
+    int h_Dataset[numSamples][numFeatures + 1] = {
+        {0, 1, 1}, // Feature 0=0, Feature 1=1, Class Label=1
+        {1, 1, 1}, // Feature 0=1, Feature 1=1, Class Label=1
+        {2, 2, 0}, // etc.
+        {1, 0, 1},
+        {0, 2, 0},
+        {2, 1, 1}
+    };
+
+    int h_priors[numClasses] = {0};
+    int h_likelihoods[numClasses * numFeatures * numFeatureValues] = {0};
+
+    // Train the Naive Bayes model
+    trainNaiveBayes(
+        (int*)h_Dataset, h_priors, h_likelihoods,
+        numSamples, numFeatures, numClasses, numFeatureValues
+    );
+
+    // Print priors
+    printf("Priors:\n");
+    for (int c = 0; c &lt; numClasses; ++c) {
+        printf("Class %d: %f\n", c, (float)h_priors[c] / numSamples);
+    }
+
+    // Print likelihoods
+    printf("\nLikelihoods:\n");
+    for (int c = 0; c &lt; numClasses; ++c) {
+        printf("Class %d:\n", c);
+        for (int f = 0; f &lt; numFeatures; ++f) {
+            for (int v = 0; v &lt; numFeatureValues; ++v) {
+                int index = c * numFeatures * numFeatureValues + f * numFeatureValues + v;
+                printf("Feature %d Value %d: %f\n", f, v, (float)h_likelihoods[index] / h_priors[c]);
+            }
+        }
+        printf("\n");
+    }
+
+    return 0;
+}
+</code></pre>
+    </div>
+
+    </div>
+    
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-c.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-cpp.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-python.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-markdown.min.js"></script>
+</body>
+</html>

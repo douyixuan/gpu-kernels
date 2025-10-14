@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Day 62 - GPU Kernels Learning Journey</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            background: #f5f5f5;
+        }
+        
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 2rem 1rem;
+            text-align: center;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        
+        .header h1 {
+            font-size: 2.5rem;
+            margin-bottom: 0.5rem;
+        }
+        
+        .header .subtitle {
+            font-size: 1.1rem;
+            opacity: 0.9;
+        }
+        
+        .nav {
+            background: white;
+            padding: 1rem;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+        
+        .nav-content {
+            max-width: 1200px;
+            margin: 0 auto;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 1rem;
+        }
+        
+        .nav a {
+            color: #667eea;
+            text-decoration: none;
+            padding: 0.5rem 1rem;
+            border-radius: 5px;
+            transition: all 0.3s;
+        }
+        
+        .nav a:hover {
+            background: #667eea;
+            color: white;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 2rem auto;
+            padding: 0 1rem;
+        }
+        
+        .description {
+            background: white;
+            padding: 2rem;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+            margin-bottom: 2rem;
+        }
+        
+        .description h2 {
+            color: #667eea;
+            margin-bottom: 1rem;
+            border-bottom: 2px solid #667eea;
+            padding-bottom: 0.5rem;
+        }
+        
+        .description pre {
+            background: #f5f5f5;
+            padding: 1rem;
+            border-radius: 5px;
+            overflow-x: auto;
+        }
+        
+        .file-section {
+            background: white;
+            margin-bottom: 2rem;
+            border-radius: 10px;
+            overflow: hidden;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+        }
+        
+        .file-section h3 {
+            background: #667eea;
+            color: white;
+            padding: 1rem;
+            margin: 0;
+        }
+        
+        .file-section pre {
+            margin: 0;
+            border-radius: 0;
+        }
+        
+        .file-section code {
+            display: block;
+            padding: 1.5rem;
+            max-height: 600px;
+            overflow: auto;
+        }
+        
+        .no-files {
+            text-align: center;
+            padding: 3rem;
+            color: #999;
+            font-style: italic;
+        }
+        
+        @media (max-width: 768px) {
+            .header h1 {
+                font-size: 1.8rem;
+            }
+            
+            .nav-content {
+                flex-direction: column;
+                text-align: center;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>Day 62</h1>
+        <div class="subtitle">GPU Kernels Learning Journey</div>
+    </div>
+    
+    <nav class="nav">
+        <div class="nav-content">
+            <a href="index.html">← Back to Index</a>
+            <div>
+                <a href="day-61.html">← Day 61</a>
+                <a href="day-63.html">Day 63 →</a>
+            </div>
+        </div>
+    </nav>
+    
+    <div class="container">
+        <div class="description">
+            <h2>Description</h2>
+            <div class="desc-content">
+### Files: `SN.cu`
+I implemented Spectral Normalization (SN) using CUDA. Spectral Normalization is a technique used to stabilize the training of neural networks, particularly Generative Adversarial Networks (GANs), by controlling the Lipschitz constant of the discriminator function. This is achieved by normalizing the weight matrices of the network layers to have a spectral norm (largest singular value) of one, thereby preventing uncontrolled growth of the network's outputs.
+            </div>
+        </div>
+        
+        <h2 style="margin-bottom: 1rem; color: #667eea;">Code Files</h2>
+
+    <div class="file-section">
+        <h3>SN.cu</h3>
+        <pre><code class="language-cuda">#include &lt;cuda_runtime.h&gt;
+#include &lt;cublas_v2.h&gt;
+#include &lt;iostream&gt;
+#include &lt;vector&gt;
+
+
+__global__ void normalize_vector(float* vec, int size) {
+    float norm = 0.0f;
+    for (int i = 0; i &lt; size; ++i) {
+        norm += vec[i] * vec[i];
+    }
+    norm = sqrtf(norm);
+    for (int i = 0; i &lt; size; ++i) {
+        vec[i] /= norm;
+    }
+}
+
+
+void matvec_mul(cublasHandle_t handle, const float* matrix, const float* vec, float* result, int rows, int cols) {
+    const float alpha = 1.0f;
+    const float beta = 0.0f;
+    cublasSgemv(handle, CUBLAS_OP_N, rows, cols, &amp;alpha, matrix, rows, vec, 1, &amp;beta, result, 1);
+}
+
+float power_iteration(const float* d_matrix, int rows, int cols, int num_iterations) {
+
+    float* d_u;
+    float* d_v;
+    cudaMalloc(&amp;d_u, rows * sizeof(float));
+    cudaMalloc(&amp;d_v, cols * sizeof(float));
+
+    std::vector&lt;float&gt; h_v(cols, 1.0f); 
+    cudaMemcpy(d_v, h_v.data(), cols * sizeof(float), cudaMemcpyHostToDevice);
+
+    cublasHandle_t handle;
+    cublasCreate(&amp;handle);
+
+    for (int i = 0; i &lt; num_iterations; ++i) {
+       
+        matvec_mul(handle, d_matrix, d_v, d_u, rows, cols);
+
+   
+        normalize_vector&lt;&lt;&lt;1, 1&gt;&gt;&gt;(d_u, rows);
+        cudaDeviceSynchronize();
+
+
+        matvec_mul(handle, d_matrix, d_u, d_v, cols, rows);
+
+        normalize_vector&lt;&lt;&lt;1, 1&gt;&gt;&gt;(d_v, cols);
+        cudaDeviceSynchronize();
+    }
+
+    float* d_Wv;
+    cudaMalloc(&amp;d_Wv, rows * sizeof(float));
+    matvec_mul(handle, d_matrix, d_v, d_Wv, rows, cols);
+
+    float sigma;
+    cublasSnrm2(handle, rows, d_Wv, 1, &amp;sigma);
+
+
+    cudaFree(d_u);
+    cudaFree(d_v);
+    cudaFree(d_Wv);
+    cublasDestroy(handle);
+
+    return sigma;
+}
+
+int main() {
+
+    const int rows = 4;
+    const int cols = 3;
+    const int num_iterations = 10;
+
+    std::vector&lt;float&gt; h_matrix = {
+        0.5f, 0.2f, 0.1f,
+        0.4f, 0.3f, 0.6f,
+        0.7f, 0.5f, 0.8f,
+        0.9f, 0.4f, 0.2f
+    };
+
+ 
+    float* d_matrix;
+    cudaMalloc(&amp;d_matrix, rows * cols * sizeof(float));
+    cudaMemcpy(d_matrix, h_matrix.data(), rows * cols * sizeof(float), cudaMemcpyHostToDevice);
+
+
+    float sigma = power_iteration(d_matrix, rows, cols, num_iterations);
+    std::cout &lt;&lt; "Spectral Norm: " &lt;&lt; sigma &lt;&lt; std::endl;
+
+
+    for (auto&amp; val : h_matrix) {
+        val /= sigma;
+    }
+
+
+    cudaFree(d_matrix);
+
+    return 0;
+}
+</code></pre>
+    </div>
+
+    </div>
+    
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-c.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-cpp.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-python.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-markdown.min.js"></script>
+</body>
+</html>
