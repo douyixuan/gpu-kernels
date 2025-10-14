@@ -1,0 +1,887 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Day 15 - GPU Kernels Learning Journey</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            background: #f5f5f5;
+        }
+        
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 2rem 1rem;
+            text-align: center;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        
+        .header h1 {
+            font-size: 2.5rem;
+            margin-bottom: 0.5rem;
+        }
+        
+        .header .subtitle {
+            font-size: 1.1rem;
+            opacity: 0.9;
+        }
+        
+        .nav {
+            background: white;
+            padding: 1rem;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+        
+        .nav-content {
+            max-width: 1200px;
+            margin: 0 auto;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 1rem;
+        }
+        
+        .nav a {
+            color: #667eea;
+            text-decoration: none;
+            padding: 0.5rem 1rem;
+            border-radius: 5px;
+            transition: all 0.3s;
+        }
+        
+        .nav a:hover {
+            background: #667eea;
+            color: white;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 2rem auto;
+            padding: 0 1rem;
+        }
+        
+        .description {
+            background: white;
+            padding: 2rem;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+            margin-bottom: 2rem;
+        }
+        
+        .description h2 {
+            color: #667eea;
+            margin-bottom: 1rem;
+            border-bottom: 2px solid #667eea;
+            padding-bottom: 0.5rem;
+        }
+        
+        .description pre {
+            background: #f5f5f5;
+            padding: 1rem;
+            border-radius: 5px;
+            overflow-x: auto;
+        }
+        
+        .file-section {
+            background: white;
+            margin-bottom: 2rem;
+            border-radius: 10px;
+            overflow: hidden;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+        }
+        
+        .file-section h3 {
+            background: #667eea;
+            color: white;
+            padding: 1rem;
+            margin: 0;
+        }
+        
+        .file-section pre {
+            margin: 0;
+            border-radius: 0;
+        }
+        
+        .file-section code {
+            display: block;
+            padding: 1.5rem;
+            max-height: 600px;
+            overflow: auto;
+        }
+        
+        .no-files {
+            text-align: center;
+            padding: 3rem;
+            color: #999;
+            font-style: italic;
+        }
+        
+        @media (max-width: 768px) {
+            .header h1 {
+                font-size: 1.8rem;
+            }
+            
+            .nav-content {
+                flex-direction: column;
+                text-align: center;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>Day 15</h1>
+        <div class="subtitle">GPU Kernels Learning Journey</div>
+    </div>
+    
+    <nav class="nav">
+        <div class="nav-content">
+            <a href="index.html">← Back to Index</a>
+            <div>
+                <a href="day-14.html">← Day 14</a>
+                <a href="day-16.html">Day 16 →</a>
+            </div>
+        </div>
+    </nav>
+    
+    <div class="container">
+        <div class="description">
+            <h2>Description</h2>
+            <div class="desc-content">
+<p>No description available for this day.</p>
+            </div>
+        </div>
+        
+        <h2 style="margin-bottom: 1rem; color: #667eea;">Code Files</h2>
+
+    <div class="file-section">
+        <h3>Cnn/cnn.cu</h3>
+        <pre><code class="language-cuda">#include &lt;cuda_runtime.h&gt;
+#include &lt;iostream&gt;
+#include &lt;cmath&gt;
+#include &lt;cstdlib&gt;
+#define CUDA_MAX_NUM_THREADS 1024
+#define BLOCK_SIZE 256
+
+// CUDA Kernel for computing dL/dW
+template &lt;typename T&gt;
+__global__ void compute_dLdW(T* dLdY, T* input_unrolled, T* dLdW, int output_height, int output_width, int num_filters, int filter_size) {
+    int row = blockIdx.y * blockDim.y + threadIdx.y;
+    int col = blockIdx.x * blockDim.x + threadIdx.x;
+    
+    if (row &lt; filter_size &amp;&amp; col &lt; num_filters) {
+        T sum = 0;
+        for (int i = 0; i &lt; output_height * output_width; i++) {
+            sum += input_unrolled[i * filter_size + row] * dLdY[i * num_filters + col];
+        }
+        dLdW[row * num_filters + col] = sum;
+    }
+}
+
+// CUDA Kernel for computing dL/dX
+template &lt;typename T&gt;
+__global__ void compute_dLdX(T* dLdY, T* weights, T* dLdX_unrolled, int output_height, int output_width, int num_filters, int filter_size) {
+    int row = blockIdx.y * blockDim.y + threadIdx.y;
+    int col = blockIdx.x * blockDim.x + threadIdx.x;
+    
+    if (row &lt; output_height * output_width &amp;&amp; col &lt; filter_size) {
+        T sum = 0;
+        for (int i = 0; i &lt; num_filters; i++) {
+            sum += dLdY[row * num_filters + i] * weights[col * num_filters + i];
+        }
+        dLdX_unrolled[row * filter_size + col] = sum;
+    }
+}
+template &lt;typename T&gt;
+__global__ void maxPoolingBackwardKernel(T* dLdY, T* input, T* dLdX, int input_height, int input_width, int pool_size, int stride) {
+    int output_height = (input_height - pool_size) / stride + 1;
+    int output_width = (input_width - pool_size) / stride + 1;
+    
+    int row = blockIdx.y * blockDim.y + threadIdx.y;
+    int col = blockIdx.x * blockDim.x + threadIdx.x;
+    
+    if (row &lt; output_height &amp;&amp; col &lt; output_width) {
+        T max_value = -INFINITY;
+        int max_i = -1, max_j = -1;
+        for (int i = 0; i &lt; pool_size; i++) {
+            for (int j = 0; j &lt; pool_size; j++) {
+                int input_row = row * stride + i;
+                int input_col = col * stride + j;
+
+                // Access input correctly, avoid out-of-bounds access
+                if (input_row &lt; input_height &amp;&amp; input_col &lt; input_width) {
+                    if (input[input_row * input_width + input_col] &gt; max_value) {
+                        max_value = input[input_row * input_width + input_col];
+                        max_i = input_row;
+                        max_j = input_col;
+                    }
+                }
+            }
+        }
+
+        // Ensure max_i and max_j are valid before accessing dLdX
+        if (max_i != -1 &amp;&amp; max_j != -1) {
+            atomicAdd(&amp;dLdX[max_i * input_width + max_j], dLdY[row * output_width + col]);
+        }
+    }
+}
+
+// Updated kernel signatures to match the calling convention
+__global__ void unrollKernel(const float* input, float* input_unrolled,
+                            const int input_channels, const int input_height, const int input_width,
+                            const int kernel_size, const int output_height, const int output_width) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    int total_elements = output_height * output_width;
+    
+    if (idx &lt; total_elements) {
+        int out_y = idx / output_width;
+        int out_x = idx % output_width;
+        
+        for (int c = 0; c &lt; input_channels; c++) {
+            for (int ky = 0; ky &lt; kernel_size; ky++) {
+                for (int kx = 0; kx &lt; kernel_size; kx++) {
+                    int in_y = out_y + ky;
+                    int in_x = out_x + kx;
+                    
+                    int unroll_idx = idx * (input_channels * kernel_size * kernel_size) +
+                                   (c * kernel_size * kernel_size + ky * kernel_size + kx);
+                    
+                    int input_idx = c * (input_height * input_width) +
+                                  in_y * input_width + in_x;
+                    
+                    input_unrolled[unroll_idx] = input[input_idx];
+                }
+            }
+        }
+    }
+}
+
+
+// Host function to launch Unrolling Kernel
+void unrollInput(int input_channels, int input_height, int input_width, 
+                int kernel_size, float* input, float* input_unrolled) {
+    int output_height = input_height - kernel_size + 1;
+    int output_width = input_width - kernel_size + 1;
+    int total_output_elements = output_height * output_width;
+    
+    int threadsPerBlock = 256;
+    int numBlocks = (total_output_elements + threadsPerBlock - 1) / threadsPerBlock;
+    
+    unrollKernel&lt;&lt;&lt;numBlocks, threadsPerBlock&gt;&gt;&gt;(
+        input,                  // const float* input
+        input_unrolled,        // float* input_unrolled
+        input_channels,        // const int input_channels
+        input_height,          // const int input_height
+        input_width,           // const int input_width
+        kernel_size,           // const int kernel_size
+        output_height,         // const int output_height
+        output_width          // const int output_width
+    );
+    
+    cudaError_t error = cudaGetLastError();
+    if (error != cudaSuccess) {
+        printf("CUDA error in unroll: %s\n", cudaGetErrorString(error));
+    }
+    
+    cudaDeviceSynchronize();
+}
+
+void convolutionBackward(int batch_size, int num_filters, int input_channels, int input_height, int input_width, int kernel_size, float* dLdY, float* input, float* weights, float* dLdX, float* dLdW) {
+    int output_height = input_height - kernel_size + 1;
+    int output_width = input_width - kernel_size + 1;
+    int filter_size = input_channels * kernel_size * kernel_size;
+    
+    float* input_unrolled;
+    float* dLdX_unrolled;
+    cudaMalloc(&amp;input_unrolled, output_height * output_width * filter_size * sizeof(float));
+    cudaMalloc(&amp;dLdX_unrolled, output_height * output_width * filter_size * sizeof(float));
+    
+    for (int n = 0; n &lt; batch_size; n++) {
+        unrollInput(input_channels, input_height, input_width, kernel_size, input + n * input_channels * input_height * input_width, input_unrolled);
+        
+        dim3 blockSize(16, 16);
+        dim3 gridSize((output_width + blockSize.x - 1) / blockSize.x, (output_height + blockSize.y - 1) / blockSize.y);
+        
+        compute_dLdW&lt;&lt;&lt;gridSize, blockSize&gt;&gt;&gt;(dLdY, input_unrolled, dLdW, output_height, output_width, num_filters, filter_size);
+        compute_dLdX&lt;&lt;&lt;gridSize, blockSize&gt;&gt;&gt;(dLdY, weights, dLdX_unrolled, output_height, output_width, num_filters, filter_size);
+        cudaDeviceSynchronize();
+    }
+    
+    cudaFree(input_unrolled);
+    cudaFree(dLdX_unrolled);
+}
+
+
+
+
+// CUDA Kernel for Max Pooling
+__global__ void maxPoolingKernel(float* input, float* output, int input_height, int input_width, int pool_size, int stride) {
+    int output_height = (input_height - pool_size) / stride + 1;
+    int output_width = (input_width - pool_size) / stride + 1;
+    
+    int row = blockIdx.y * blockDim.y + threadIdx.y;
+    int col = blockIdx.x * blockDim.x + threadIdx.x;
+    
+    if (row &lt; output_height &amp;&amp; col &lt; output_width) {
+        float max_value = -INFINITY;
+        for (int i = 0; i &lt; pool_size; i++) {
+            for (int j = 0; j &lt; pool_size; j++) {
+                int input_row = row * stride + i;
+                int input_col = col * stride + j;
+                max_value = fmaxf(max_value, input[input_row * input_width + input_col]);
+            }
+        }
+        output[row * output_width + col] = max_value;
+    }
+}
+
+// CUDA Kernel for Matrix Multiplication (GEMM for Convolution)
+__global__ void matrixMultiplicationKernel(float* input_unrolled, float* weights, float* output, 
+                                         int output_height, int output_width, int num_filters, int filter_size) {
+    // Calculate actual position
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    int total_output_elements = output_height * output_width;
+    
+    if (idx &lt; total_output_elements * num_filters) {
+        int output_idx = idx / num_filters;  // Position in output feature map
+        int filter_idx = idx % num_filters;  // Which filter we're using
+        
+        float sum = 0.0f;
+        // Multiply unrolled input with the corresponding filter
+        for (int i = 0; i &lt; filter_size; i++) {
+            sum += input_unrolled[output_idx * filter_size + i] * weights[i * num_filters + filter_idx];
+        }
+        output[idx] = sum;
+    }
+}
+
+
+
+
+__global__ void convolutionKernel(const float* input_unrolled, const float* weights, float* output,
+                                 const int output_size, const int num_filters, const int filter_size) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    
+    if (idx &lt; output_size * num_filters) {
+        int output_idx = idx / num_filters;
+        int filter_idx = idx % num_filters;
+        
+        float sum = 0.0f;
+        for (int i = 0; i &lt; filter_size; i++) {
+            sum += input_unrolled[output_idx * filter_size + i] * 
+                   weights[i * num_filters + filter_idx];
+        }
+        output[idx] = sum;
+    }
+}
+
+void convolutionForward(float* input, float* weights, float* output,
+                       int batch_size, int num_filters, int input_channels,
+                       int input_height, int input_width, int kernel_size) {
+    int output_height = input_height - kernel_size + 1;
+    int output_width = input_width - kernel_size + 1;
+    int output_size = output_height * output_width;
+    int filter_size = input_channels * kernel_size * kernel_size;
+    
+    // Allocate unrolled input matrix
+    float* input_unrolled;
+    size_t unrolled_size = output_size * filter_size * sizeof(float);
+    cudaMalloc(&amp;input_unrolled, unrolled_size);
+    
+    // Calculate grid and block dimensions
+    int unroll_blocks = (output_size + BLOCK_SIZE - 1) / BLOCK_SIZE;
+    int conv_blocks = (output_size * num_filters + BLOCK_SIZE - 1) / BLOCK_SIZE;
+    
+    for (int n = 0; n &lt; batch_size; n++) {
+        float* input_n = input + n * input_channels * input_height * input_width;
+        float* output_n = output + n * num_filters * output_height * output_width;
+        
+        // Launch unroll kernel with correct parameters
+        unrollKernel&lt;&lt;&lt;unroll_blocks, BLOCK_SIZE&gt;&gt;&gt;(
+            input_n,
+            input_unrolled,
+            input_channels,
+            input_height,
+            input_width,
+            kernel_size,
+            output_height,
+            output_width
+        );
+        
+        // Check for kernel launch errors
+        cudaError_t error = cudaGetLastError();
+        if (error != cudaSuccess) {
+            printf("Unroll kernel error: %s\n", cudaGetErrorString(error));
+        }
+        
+        // Launch convolution kernel
+        convolutionKernel&lt;&lt;&lt;conv_blocks, BLOCK_SIZE&gt;&gt;&gt;(
+            input_unrolled,
+            weights,
+            output_n,
+            output_size,
+            num_filters,
+            filter_size
+        );
+        
+        // Check for kernel launch errors
+        error = cudaGetLastError();
+        if (error != cudaSuccess) {
+            printf("Convolution kernel error: %s\n", cudaGetErrorString(error));
+        }
+        
+        cudaDeviceSynchronize();
+    }
+    
+    cudaFree(input_unrolled);
+}
+/*
+void testConvNet() {
+    // Test dimensions
+    const int batch_size = 1;
+    const int input_channels = 1;
+    const int input_height = 4;
+    const int input_width = 4;
+    const int kernel_size = 3;
+    const int num_filters = 2;
+    
+    // Calculate output dimensions
+    const int output_height = input_height - kernel_size + 1;
+    const int output_width = input_width - kernel_size + 1;
+    
+    // Allocate and initialize host memory
+    float input[] = {
+        1, 2, 3, 4,
+        5, 6, 7, 8,
+        9, 10, 11, 12,
+        13, 14, 15, 16
+    };
+    
+    float weights[] = {
+        1, 0, -1,
+        1, 0, -1,
+        1, 0, -1,
+        // Second filter
+        0, 1, -1,
+        0, 1, -1,
+        0, 1, -1
+    };
+    
+    // Allocate device memory
+    float *d_input, *d_weights, *d_output;
+    
+    size_t input_size = batch_size * input_channels * input_height * input_width * sizeof(float);
+    size_t weights_size = num_filters * input_channels * kernel_size * kernel_size * sizeof(float);
+    size_t output_size = batch_size * num_filters * output_height * output_width * sizeof(float);
+    
+    cudaMalloc(&amp;d_input, input_size);
+    cudaMalloc(&amp;d_weights, weights_size);
+    cudaMalloc(&amp;d_output, output_size);
+    cudaMemset(d_output, 0, output_size);  // Initialize output to zero
+    
+    // Copy data to device
+    cudaMemcpy(d_input, input, input_size, cudaMemcpyHostToDevice);
+    cudaMemcpy(d_weights, weights, weights_size, cudaMemcpyHostToDevice);
+    
+    // Forward pass
+    convolutionForward(d_input, d_weights, d_output,
+                      batch_size, num_filters, input_channels,
+                      input_height, input_width, kernel_size);
+    
+    // Copy results back to host
+    float* output = new float[output_size/sizeof(float)];
+    cudaMemcpy(output, d_output, output_size, cudaMemcpyDeviceToHost);
+    
+    // Print results
+    std::cout &lt;&lt; "Forward Output:\n";
+    for (int f = 0; f &lt; num_filters; f++) {
+        std::cout &lt;&lt; "Filter " &lt;&lt; f &lt;&lt; ":\n";
+        for (int i = 0; i &lt; output_height; i++) {
+            for (int j = 0; j &lt; output_width; j++) {
+                std::cout &lt;&lt; output[f * output_height * output_width + i * output_width + j] &lt;&lt; " ";
+            }
+            std::cout &lt;&lt; "\n";
+        }
+        std::cout &lt;&lt; "\n";
+    }
+    
+    // Cleanup
+    delete[] output;
+    cudaFree(d_input);
+    cudaFree(d_weights);
+    cudaFree(d_output);
+}
+*/
+</code></pre>
+    </div>
+
+    <div class="file-section">
+        <h3>flash_attention_backprop/flash.cu</h3>
+        <pre><code class="language-cuda">#include &lt;cuda_runtime.h&gt;
+#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+#include &lt;math.h&gt;
+#include &lt;curand_kernel.h&gt;  
+#include &lt;limits&gt; 
+#include "helper.cuh"
+#include "kernels.cuh"
+#define BLOCK_SIZE 1024
+#define THREADS_PER_BLOCK 1024
+#define NEGATIVE_INFINITY -1e38f
+void flashAttention2BackwardPass(const float* Q, const float* K, const float* V, const float* O, const float* dO, float* dQ, float* dK, float* dV, int N, int d, int Bc, int Br, float* Lhost) {
+    float scale = 1.0f / sqrtf((float)d);
+    // Initialize D
+    float* D_device;
+    cudaMalloc((void**)&amp;D_device, N * sizeof(float));
+    computeDKernel&lt;&lt;&lt;(N + BLOCK_SIZE - 1) / BLOCK_SIZE, BLOCK_SIZE&gt;&gt;&gt;(dO, O, D_device, N, d);
+    cudaDeviceSynchronize();
+
+    float* D_host = (float*)malloc(N * sizeof(float));
+    cudaMemcpy(D_host, D_device, N * sizeof(float), cudaMemcpyDeviceToHost);
+
+    // Initialize dQ, dK, dV on device
+    cudaMemset(dQ, 0, N * d * sizeof(float));
+    cudaMemset(dK, 0, N * d * sizeof(float));
+    cudaMemset(dV, 0, N * d * sizeof(float));
+
+    for (int j = 0; j &lt; (N + Bc - 1) / Bc; ++j) {
+        // Load Kj, Vj from HBM to on-chip SRAM (Simulated by host memory for now)
+        float* Kj_host = (float*)malloc(Bc * d * sizeof(float));
+        float* Vj_host = (float*)malloc(Bc * d * sizeof(float));
+        cudaMemcpy(Kj_host, K + j * Bc * d, Bc * d * sizeof(float), cudaMemcpyDeviceToHost);
+        cudaMemcpy(Vj_host, V + j * Bc * d, Bc * d * sizeof(float), cudaMemcpyDeviceToHost);
+
+        float* Kj_device;
+        float* Vj_device;
+        cudaMalloc((void**)&amp;Kj_device, Bc * d * sizeof(float));
+        cudaMalloc((void**)&amp;Vj_device, Bc * d * sizeof(float));
+        cudaMemcpy(Kj_device, Kj_host, Bc * d * sizeof(float), cudaMemcpyHostToDevice);
+        cudaMemcpy(Vj_device, Vj_host, Bc * d * sizeof(float), cudaMemcpyHostToDevice);
+
+        // Initialize dKj, dVj on SRAM (Simulated by device memory for now)
+        float* dKj_temp;
+        float* dVj_temp;
+        cudaMalloc((void**)&amp;dKj_temp, Bc * d * sizeof(float));
+        cudaMalloc((void**)&amp;dVj_temp, Bc * d * sizeof(float));
+        cudaMemset(dKj_temp, 0, Bc * d * sizeof(float));
+        cudaMemset(dVj_temp, 0, Bc * d * sizeof(float));
+
+        for (int i = 0; i &lt; (N + Br - 1) / Br; ++i) {
+            // Load Qi, dOi, dQi, Li, Di from HBM to on-chip SRAM (Simulated by device memory for now)
+            const float* Qi = Q + i * Br * d;
+            const float* dOi = dO + i * Br * d;
+            float* dQi_temp;
+            cudaMalloc((void**)&amp;dQi_temp, Br * d * sizeof(float));
+            cudaMemset(dQi_temp, 0, Br * d * sizeof(float));
+
+            const float* Li = Lhost + i * Br; // Assuming L is divided into blocks of size Br
+            const float* Di = D_host + i * Br; // D is now divided into blocks of size Br
+
+            // Allocate intermediate buffers on device for each loop iteration
+            float* Si_device;
+            float* Pi_device;
+            float* dPi_device;
+            float* dSi_device;
+            cudaMalloc((void**)&amp;Si_device, Br * Bc * sizeof(float));
+            cudaMalloc((void**)&amp;Pi_device, Br * Bc * sizeof(float));
+            cudaMalloc((void**)&amp;dPi_device, Br * Bc * sizeof(float));
+            cudaMalloc((void**)&amp;dSi_device, Br * Bc * sizeof(float));
+
+            // Compute S_i
+            computeSiKernel&lt;&lt;&lt;(Br + BLOCK_SIZE - 1) / BLOCK_SIZE, BLOCK_SIZE&gt;&gt;&gt;(Qi, Kj_device, Si_device, Br, Bc, d, scale);
+            cudaDeviceSynchronize();
+
+            // Find row-wise max of S_i
+            float* maxSi_device;
+            cudaMalloc((void**)&amp;maxSi_device, Br * sizeof(float));
+            findRowMaxSiKernel&lt;&lt;&lt;(Br + BLOCK_SIZE - 1) / BLOCK_SIZE, BLOCK_SIZE&gt;&gt;&gt;(Si_device, maxSi_device, Br, Bc);
+            cudaDeviceSynchronize();
+
+            // Compute P_i
+            computePiKernel&lt;&lt;&lt;(Br + BLOCK_SIZE - 1) / BLOCK_SIZE, BLOCK_SIZE&gt;&gt;&gt;(Si_device, Li, Pi_device, Br, Bc, maxSi_device);
+            cudaDeviceSynchronize();
+
+            // Compute dVj += (P_i^T) * dOi
+            computeDViKernel&lt;&lt;&lt;(d + BLOCK_SIZE - 1) / BLOCK_SIZE, BLOCK_SIZE&gt;&gt;&gt;(Pi_device, dOi, dVj_temp, Br, Bc, d);
+            cudaDeviceSynchronize();
+
+            // Compute dPi = dOi * V_j^T
+            computeDPiKernel&lt;&lt;&lt;(Br + BLOCK_SIZE - 1) / BLOCK_SIZE, BLOCK_SIZE&gt;&gt;&gt;(dOi, Vj_device, dPi_device, Br, Bc, d);
+            cudaDeviceSynchronize();
+
+            // Compute dS_i = P_i * (dP_i - D_i)
+            computeDSiKernel&lt;&lt;&lt;(Br + BLOCK_SIZE - 1) / BLOCK_SIZE, BLOCK_SIZE&gt;&gt;&gt;(Pi_device, dPi_device, Di, dSi_device, Br, Bc);
+            cudaDeviceSynchronize();
+
+            // Compute dQ_i += dS_i * K_j
+            computeDQiKernel&lt;&lt;&lt;(Br + BLOCK_SIZE - 1) / BLOCK_SIZE, BLOCK_SIZE&gt;&gt;&gt;(dSi_device, Kj_device, dQi_temp, Br, d, Bc);
+            cudaDeviceSynchronize();
+
+            // Compute dKj += dS_i^T * Q_i
+            computeDKjKernel&lt;&lt;&lt;(Bc + BLOCK_SIZE - 1) / BLOCK_SIZE, BLOCK_SIZE&gt;&gt;&gt;(dSi_device, Qi, dKj_temp, Bc, d, Br);
+            cudaDeviceSynchronize();
+
+            // Accumulate into dQ
+            accumulateDQKernel&lt;&lt;&lt;(Br * d + BLOCK_SIZE - 1) / BLOCK_SIZE, BLOCK_SIZE&gt;&gt;&gt;(dQ, dQi_temp, Br, d, i * Br * d);
+            cudaDeviceSynchronize();
+
+            // Free intermediate buffers
+            cudaFree(Si_device);
+            cudaFree(Pi_device);
+            cudaFree(dPi_device);
+            cudaFree(dSi_device);
+            cudaFree(maxSi_device);
+            cudaFree(dQi_temp);
+        }
+
+        // Accumulate into dK and dV
+        accumulateDKVjKernel&lt;&lt;&lt;(Bc * d + BLOCK_SIZE - 1) / BLOCK_SIZE, BLOCK_SIZE&gt;&gt;&gt;(dK, dV, dKj_temp, dVj_temp, Bc, d, j * Bc * d);
+        cudaDeviceSynchronize();
+
+        // Free device memory for Kj, Vj, dKj, dVj
+        cudaFree(Kj_device);
+        cudaFree(Vj_device);
+        cudaFree(dKj_temp);
+        cudaFree(dVj_temp);
+        free(Kj_host);
+        free(Vj_host);
+    }
+
+    cudaFree(D_device);
+    free(D_host);
+}</code></pre>
+    </div>
+
+    <div class="file-section">
+        <h3>flash_attention_backprop/kernels.cuh</h3>
+        <pre><code class="language-cuda">#ifndef KERNELS_CUH
+#define KERNELS_CUH
+
+__global__ void computeDKernel(const float* dO, const float* O, float* D, int N, int d);
+
+__global__ void computeSiKernel(const float* Qi, const float* Kj, float* Si, int Br, int Bc, int d, float scale);
+
+__global__ void findRowMaxSiKernel(float* Si, float* maxSi, int Br, int Bc);
+
+__global__ void computeSoftmaxKernel(float* Si, float* softmaxSi, int Br, int Bc);
+
+__global__ void computeAttentionKernel(const float* Q, const float* K, const float* V, float* attention, int N, int d);
+
+__global__ void computeQKernel(const float* Q, const float* dO, float* dQ, int N, int d);
+
+__global__ void computeKKernel(const float* K, const float* dO, float* dK, int N, int d);
+
+__global__ void computeVKernel(const float* V, const float* dO, float* dV, int N, int d);
+
+__global__ void computeGradientsKernel(const float* dO, float* dQ, float* dK, float* dV, int N, int d);
+
+#endif
+</code></pre>
+    </div>
+
+    <div class="file-section">
+        <h3>flash_attention_backprop/helper.cu</h3>
+        <pre><code class="language-cuda">#include &lt;cuda_runtime.h&gt;
+#include &lt;math.h&gt;
+#include "helper.cuh"
+
+__device__ float warpReduceMax(float val) {
+    for (int offset = 16; offset &gt; 0; offset /= 2) {
+        val = fmaxf(val, __shfl_down_sync(0xffffffff, val, offset));
+    }
+    return val;
+}
+</code></pre>
+    </div>
+
+    <div class="file-section">
+        <h3>flash_attention_backprop/helper.cuh</h3>
+        <pre><code class="language-cuda">#ifndef HELPER_CUH
+#define HELPER_CUH
+
+__device__ float warpReduceMax(float val);
+
+#endif
+</code></pre>
+    </div>
+
+    <div class="file-section">
+        <h3>flash_attention_backprop/kernels.cu</h3>
+        <pre><code class="language-cuda">#include &lt;cuda_runtime.h&gt;
+#include &lt;math.h&gt;
+#include "kernels.cuh"
+
+
+__global__ void computeDKernel(const float* dO, const float* O, float* D, int N, int d) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx &gt;= N) return;
+
+    float sum = 0.0f;
+    for (int i = 0; i &lt; d; i++) {
+        sum += dO[idx * d + i] * O[idx * d + i];
+    }
+    D[idx] = sum;
+}
+
+__global__ void computeSiKernel(const float* Qi, const float* Kj, float* Si, int Br, int Bc, int d, float scale) {
+    int row = blockIdx.x * blockDim.x + threadIdx.x;
+    if (row &gt;= Br) return;
+
+    for (int col = 0; col &lt; Bc; ++col) {
+        float sum = 0.0f;
+        for (int k = 0; k &lt; d; ++k) {
+            sum += Qi[row * d + k] * Kj[col * d + k];
+        }
+        Si[row * Bc + col] = sum * scale; // Apply scaling here
+    }
+}
+
+__global__ void findRowMaxSiKernel(const float* Si, float* maxSi, int Br, int Bc) {
+    int row = blockIdx.x * blockDim.x + threadIdx.x;
+    if (row &gt;= Br) return;
+
+    __shared__ float shared_max[BLOCK_SIZE];
+    float local_max = NEGATIVE_INFINITY;
+
+    for (int col = threadIdx.x; col &lt; Bc; col += blockDim.x) {
+        local_max = fmaxf(local_max, Si[row * Bc + col]);
+    }
+
+    shared_max[threadIdx.x] = local_max;
+    __syncthreads();
+
+    for (int s = blockDim.x / 2; s &gt; 0; s &gt;&gt;= 1) {
+        if (threadIdx.x &lt; s) {
+            shared_max[threadIdx.x] = fmaxf(shared_max[threadIdx.x], shared_max[threadIdx.x + s]);
+        }
+        __syncthreads();
+    }
+
+    if (threadIdx.x == 0) {
+        maxSi[row] = shared_max[0];
+    }
+}
+
+__global__ void computePiKernel(const float* Si, const float* Li, float* Pi, int Br, int Bc, const float* maxSi) {
+    int row = blockIdx.x * blockDim.x + threadIdx.x;
+    int col = threadIdx.x;
+    if (row &gt;= Br) return;
+
+    __shared__ float shared_max[BLOCK_SIZE];
+     if (col &lt; Bc) {
+         float si_val = Si[row * Bc + col];
+         float li_val = Li[row];
+         float max_si_val = maxSi[row];
+         float val = expf(si_val - li_val - max_si_val);
+         if (isnan(val) || isinf(val)) {
+             val = 0.0f;
+         }
+         Pi[row * Bc + col] = val;
+    }
+}
+
+__global__ void computeDViKernel(const float* Pi, const float* dOi, float* dVj_temp, int Br, int Bc, int d) {
+    int col_dVi = blockIdx.x * blockDim.x + threadIdx.x;
+    if (col_dVi &gt;= d) return;
+
+    for (int row_dVj = 0; row_dVj &lt; Bc; ++row_dVj) {
+        float sum = 0.0f;
+        for (int row_Pi = 0; row_Pi &lt; Br; ++row_Pi) {
+            sum += Pi[row_Pi * Bc + row_dVj] * dOi[row_Pi * d + col_dVi];
+        }
+        dVj_temp[row_dVj * d + col_dVi] = sum;
+    }
+}
+
+__global__ void computeDPiKernel(const float* dOi, const float* Vj, float* dPi, int Br, int Bc, int d) {
+    int row = blockIdx.x * blockDim.x + threadIdx.x;
+    if (row &gt;= Br) return;
+
+    for (int col = 0; col &lt; Bc; ++col) {
+        float sum = 0.0f;
+        for (int k = 0; k &lt; d; ++k) {
+            sum += dOi[row * d + k] * Vj[col * d + k];
+        }
+        dPi[row * Bc + col] = sum;
+    }
+}
+
+__global__ void computeDSiKernel(const float* Pi, const float* dPi, const float* Di, float* dSi, int Br, int Bc) {
+    int row = blockIdx.x * blockDim.x + threadIdx.x;
+    int col = threadIdx.x;
+
+    if (row &gt;= Br || col &gt;= Bc) return;
+    __shared__ float shared_di[BLOCK_SIZE];
+     if(threadIdx.x &lt; Bc) {
+         shared_di[threadIdx.x] = Di[row]; // Load each element of Di
+     }
+     __syncthreads();
+    dSi[row * Bc + col] = Pi[row * Bc + col] * (dPi[row * Bc + col] - shared_di[threadIdx.x]);
+}
+
+__global__ void computeDQiKernel(const float* dSi, const float* Kj, float* dQi_temp, int Br, int d, int Bc) {
+    int row = blockIdx.x * blockDim.x + threadIdx.x;
+    if (row &gt;= Br) return;
+
+    for (int col = 0; col &lt; d; ++col) {
+        float sum = 0.0f;
+        for (int k = 0; k &lt; Bc; ++k) {
+            sum += dSi[row * Bc + k] * Kj[k * d + col];
+        }
+        dQi_temp[row * d + col] = sum;
+    }
+}
+
+__global__ void computeDKjKernel(const float* dSi, const float* Qi, float* dKj_temp, int Bc, int d, int Br) {
+    int col = blockIdx.x * blockDim.x + threadIdx.x;
+    if (col &gt;= Bc) return;
+
+    for (int row = 0; row &lt; d; ++row) {
+        float sum = 0.0f;
+        for (int k = 0; k &lt; Br; ++k) {
+            sum += dSi[k * Bc + col] * Qi[k * d + row];
+        }
+        dKj_temp[col * d + row] = sum;
+    }
+}
+
+__global__ void accumulateDQKernel(float* dQ, const float* dQi_temp, int Br, int d, int globalOffset) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx &gt;= Br * d) return;
+
+    atomicAdd(&amp;dQ[globalOffset + idx], dQi_temp[idx]);
+}
+
+__global__ void accumulateDKVjKernel(float* dK, float* dV, const float* dKj_temp, const float* dVj_temp, int Bc, int d, int globalOffset) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx &gt;= Bc * d) return;
+
+    atomicAdd(&amp;dK[globalOffset + idx], dKj_temp[idx]);
+    atomicAdd(&amp;dV[globalOffset + idx], dVj_temp[idx]);
+}</code></pre>
+    </div>
+
+    </div>
+    
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-c.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-cpp.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-python.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-markdown.min.js"></script>
+</body>
+</html>

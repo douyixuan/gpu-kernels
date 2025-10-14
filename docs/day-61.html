@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Day 61 - GPU Kernels Learning Journey</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            background: #f5f5f5;
+        }
+        
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 2rem 1rem;
+            text-align: center;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        
+        .header h1 {
+            font-size: 2.5rem;
+            margin-bottom: 0.5rem;
+        }
+        
+        .header .subtitle {
+            font-size: 1.1rem;
+            opacity: 0.9;
+        }
+        
+        .nav {
+            background: white;
+            padding: 1rem;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+        
+        .nav-content {
+            max-width: 1200px;
+            margin: 0 auto;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 1rem;
+        }
+        
+        .nav a {
+            color: #667eea;
+            text-decoration: none;
+            padding: 0.5rem 1rem;
+            border-radius: 5px;
+            transition: all 0.3s;
+        }
+        
+        .nav a:hover {
+            background: #667eea;
+            color: white;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 2rem auto;
+            padding: 0 1rem;
+        }
+        
+        .description {
+            background: white;
+            padding: 2rem;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+            margin-bottom: 2rem;
+        }
+        
+        .description h2 {
+            color: #667eea;
+            margin-bottom: 1rem;
+            border-bottom: 2px solid #667eea;
+            padding-bottom: 0.5rem;
+        }
+        
+        .description pre {
+            background: #f5f5f5;
+            padding: 1rem;
+            border-radius: 5px;
+            overflow-x: auto;
+        }
+        
+        .file-section {
+            background: white;
+            margin-bottom: 2rem;
+            border-radius: 10px;
+            overflow: hidden;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+        }
+        
+        .file-section h3 {
+            background: #667eea;
+            color: white;
+            padding: 1rem;
+            margin: 0;
+        }
+        
+        .file-section pre {
+            margin: 0;
+            border-radius: 0;
+        }
+        
+        .file-section code {
+            display: block;
+            padding: 1.5rem;
+            max-height: 600px;
+            overflow: auto;
+        }
+        
+        .no-files {
+            text-align: center;
+            padding: 3rem;
+            color: #999;
+            font-style: italic;
+        }
+        
+        @media (max-width: 768px) {
+            .header h1 {
+                font-size: 1.8rem;
+            }
+            
+            .nav-content {
+                flex-direction: column;
+                text-align: center;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>Day 61</h1>
+        <div class="subtitle">GPU Kernels Learning Journey</div>
+    </div>
+    
+    <nav class="nav">
+        <div class="nav-content">
+            <a href="index.html">← Back to Index</a>
+            <div>
+                <a href="day-60.html">← Day 60</a>
+                <a href="day-62.html">Day 62 →</a>
+            </div>
+        </div>
+    </nav>
+    
+    <div class="container">
+        <div class="description">
+            <h2>Description</h2>
+            <div class="desc-content">
+### Files: `simulated_annealing_triton.py`
+I implemented a Simulated Annealing (SA) algorithm that leverages Triton to accelerate the evaluation of the objective function on the GPU.
+            </div>
+        </div>
+        
+        <h2 style="margin-bottom: 1rem; color: #667eea;">Code Files</h2>
+
+    <div class="file-section">
+        <h3>simulated_annealing_triton.py</h3>
+        <pre><code class="language-python">import math
+import torch
+import triton
+import triton.language as tl
+
+# ----------------------------
+# Triton kernel for the objective function
+# ----------------------------
+@triton.jit
+def objective_function_kernel(x_ptr, result_ptr, BLOCK_SIZE: tl.constexpr):
+
+    pid = tl.program_id(0)
+
+    x = tl.load(x_ptr + pid)
+
+    res = (x - 3.0) * (x - 3.0)
+
+    tl.store(result_ptr + pid, res)
+
+def objective_function(x: torch.Tensor) -&gt; torch.Tensor:
+    result = torch.empty_like(x)
+
+    BLOCK_SIZE = 1
+   
+    grid = lambda meta: (x.numel(),)
+    objective_function_kernel[grid](x, result, BLOCK_SIZE=BLOCK_SIZE)
+    return result
+
+# ----------------------------
+# Simulated Annealing (SA) implementation in Python
+# ----------------------------
+def simulated_annealing_sa(num_steps=1000, initial_x=0.0, initial_temp=10.0, alpha=0.99):
+    
+    x = initial_x
+    
+    current_val = objective_function(torch.tensor([x], device='cuda', dtype=torch.float32)).item()
+    best_x = x
+    best_val = current_val
+    temp = initial_temp
+
+    for step in range(num_steps):
+        candidate = x + (torch.rand(1).item() - 0.5) * 2.0  
+        candidate_val = objective_function(torch.tensor([candidate], device='cuda', dtype=torch.float32)).item()
+        delta = candidate_val - current_val
+
+        if delta &lt; 0 or torch.rand(1).item() &lt; math.exp(-delta / temp):
+            x = candidate
+            current_val = candidate_val
+            if candidate_val &lt; best_val:
+                best_val = candidate_val
+                best_x = candidate
+
+        temp *= alpha
+
+    return best_x, best_val
+
+if __name__ == '__main__':
+    torch.cuda.manual_seed(0)  
+    best_solution, best_objective = simulated_annealing_sa()
+    print("Best solution found: x = {:.4f} with objective value = {:.4f}"
+          .format(best_solution, best_objective))
+</code></pre>
+    </div>
+
+    </div>
+    
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-c.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-cpp.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-python.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-markdown.min.js"></script>
+</body>
+</html>

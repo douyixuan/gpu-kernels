@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Day 36 - GPU Kernels Learning Journey</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            background: #f5f5f5;
+        }
+        
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 2rem 1rem;
+            text-align: center;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        
+        .header h1 {
+            font-size: 2.5rem;
+            margin-bottom: 0.5rem;
+        }
+        
+        .header .subtitle {
+            font-size: 1.1rem;
+            opacity: 0.9;
+        }
+        
+        .nav {
+            background: white;
+            padding: 1rem;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+        
+        .nav-content {
+            max-width: 1200px;
+            margin: 0 auto;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 1rem;
+        }
+        
+        .nav a {
+            color: #667eea;
+            text-decoration: none;
+            padding: 0.5rem 1rem;
+            border-radius: 5px;
+            transition: all 0.3s;
+        }
+        
+        .nav a:hover {
+            background: #667eea;
+            color: white;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 2rem auto;
+            padding: 0 1rem;
+        }
+        
+        .description {
+            background: white;
+            padding: 2rem;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+            margin-bottom: 2rem;
+        }
+        
+        .description h2 {
+            color: #667eea;
+            margin-bottom: 1rem;
+            border-bottom: 2px solid #667eea;
+            padding-bottom: 0.5rem;
+        }
+        
+        .description pre {
+            background: #f5f5f5;
+            padding: 1rem;
+            border-radius: 5px;
+            overflow-x: auto;
+        }
+        
+        .file-section {
+            background: white;
+            margin-bottom: 2rem;
+            border-radius: 10px;
+            overflow: hidden;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+        }
+        
+        .file-section h3 {
+            background: #667eea;
+            color: white;
+            padding: 1rem;
+            margin: 0;
+        }
+        
+        .file-section pre {
+            margin: 0;
+            border-radius: 0;
+        }
+        
+        .file-section code {
+            display: block;
+            padding: 1.5rem;
+            max-height: 600px;
+            overflow: auto;
+        }
+        
+        .no-files {
+            text-align: center;
+            padding: 3rem;
+            color: #999;
+            font-style: italic;
+        }
+        
+        @media (max-width: 768px) {
+            .header h1 {
+                font-size: 1.8rem;
+            }
+            
+            .nav-content {
+                flex-direction: column;
+                text-align: center;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>Day 36</h1>
+        <div class="subtitle">GPU Kernels Learning Journey</div>
+    </div>
+    
+    <nav class="nav">
+        <div class="nav-content">
+            <a href="index.html">← Back to Index</a>
+            <div>
+                <a href="day-35.html">← Day 35</a>
+                <a href="day-37.html">Day 37 →</a>
+            </div>
+        </div>
+    </nav>
+    
+    <div class="container">
+        <div class="description">
+            <h2>Description</h2>
+            <div class="desc-content">
+### Files: `heat_diffusion.cpp`
+Implemented a 2D heat diffusion simulation using HIP (Heterogeneous-Computing Interface for Portability). The simulation models how heat spreads across a 2D grid over time using the finite difference method. The implementation leverages GPU parallelism to accelerate the computation of temperature changes across the grid.
+            </div>
+        </div>
+        
+        <h2 style="margin-bottom: 1rem; color: #667eea;">Code Files</h2>
+
+    <div class="file-section">
+        <h3>heat_diffusion.cpp</h3>
+        <pre><code class="language-cpp">#include &lt;hip/hip_runtime.h&gt;
+#include &lt;iostream&gt;
+
+#define N 100              // Grid size
+#define T 1000             // Time steps
+#define DX 0.1             // Spatial step
+#define DT 0.01            // Time step
+#define ALPHA 0.1          // Thermal diffusivity
+#define BLOCK_SIZE 16      // Thread block size
+#define TILE_SIZE (BLOCK_SIZE - 2)  // Actual tile size considering halo regions
+
+// Error checking macro
+#define CHECK_HIP_ERROR(cmd) \
+    do { \
+        hipError_t error = cmd; \
+        if (error != hipSuccess) { \
+            std::cerr &lt;&lt; "HIP error: " &lt;&lt; hipGetErrorString(error) &lt;&lt; " at " &lt;&lt; __FILE__ &lt;&lt; ":" &lt;&lt; __LINE__ &lt;&lt; std::endl; \
+            exit(1); \
+        } \
+    } while (0)
+
+// HIP kernel to compute heat diffusion using shared memory and tiling
+__global__ void heat_diffusion_optimized(const double* __restrict__ u, 
+                                       double* __restrict__ u_new, 
+                                       const int n) {
+    __shared__ double tile[BLOCK_SIZE][BLOCK_SIZE];
+    
+    // Global indices
+    int gx = blockIdx.x * TILE_SIZE + threadIdx.x - 1;
+    int gy = blockIdx.y * TILE_SIZE + threadIdx.y - 1;
+    
+    // Local indices
+    int tx = threadIdx.x;
+    int ty = threadIdx.y;
+
+    // Load data into shared memory including halo regions
+    if (gx &gt;= 0 &amp;&amp; gx &lt; n &amp;&amp; gy &gt;= 0 &amp;&amp; gy &lt; n) {
+        tile[ty][tx] = u[gx * n + gy];
+    } else {
+        tile[ty][tx] = 0.0;
+    }
+    
+    __syncthreads();
+
+    // Only compute for interior points of the tile
+    if (tx &gt; 0 &amp;&amp; tx &lt; BLOCK_SIZE-1 &amp;&amp; ty &gt; 0 &amp;&amp; ty &lt; BLOCK_SIZE-1) {
+        gx = blockIdx.x * TILE_SIZE + threadIdx.x - 1;
+        gy = blockIdx.y * TILE_SIZE + threadIdx.y - 1;
+        
+        if (gx &gt; 0 &amp;&amp; gx &lt; n-1 &amp;&amp; gy &gt; 0 &amp;&amp; gy &lt; n-1) {
+            double d2u_dx2 = (tile[ty][tx+1] - 2.0*tile[ty][tx] + tile[ty][tx-1]) / (DX * DX);
+            double d2u_dy2 = (tile[ty+1][tx] - 2.0*tile[ty][tx] + tile[ty-1][tx]) / (DX * DX);
+            
+            u_new[gx * n + gy] = tile[ty][tx] + ALPHA * DT * (d2u_dx2 + d2u_dy2);
+        }
+    }
+}
+
+int main() {
+    double *u, *u_new;
+    double *d_u, *d_u_new;
+
+    // Allocate page-locked memory on host for better transfer speeds
+    CHECK_HIP_ERROR(hipHostMalloc(&amp;u, N * N * sizeof(double)));
+    CHECK_HIP_ERROR(hipHostMalloc(&amp;u_new, N * N * sizeof(double)));
+
+    // Initialize grid with vectorized operations
+    #pragma omp parallel for collapse(2)
+    for (int i = 0; i &lt; N; i++) {
+        for (int j = 0; j &lt; N; j++) {
+            u[i * N + j] = (i == 0 || j == 0 || i == N-1 || j == N-1) ? 100.0 : 0.0;
+            u_new[i * N + j] = u[i * N + j];
+        }
+    }
+
+    // Allocate memory on the GPU
+    CHECK_HIP_ERROR(hipMalloc(&amp;d_u, N * N * sizeof(double)));
+    CHECK_HIP_ERROR(hipMalloc(&amp;d_u_new, N * N * sizeof(double)));
+
+    // Copy initial data to the GPU using async transfer
+    hipStream_t stream;
+    CHECK_HIP_ERROR(hipStreamCreate(&amp;stream));
+    CHECK_HIP_ERROR(hipMemcpyAsync(d_u, u, N * N * sizeof(double), hipMemcpyHostToDevice, stream));
+    CHECK_HIP_ERROR(hipMemcpyAsync(d_u_new, u_new, N * N * sizeof(double), hipMemcpyHostToDevice, stream));
+
+    // Define optimized block and grid sizes
+    dim3 blockSize(BLOCK_SIZE, BLOCK_SIZE);
+    dim3 gridSize((N + TILE_SIZE - 1) / TILE_SIZE, (N + TILE_SIZE - 1) / TILE_SIZE);
+
+    // Iterate over time steps
+    for (int t = 0; t &lt; T; t++) {
+        heat_diffusion_optimized&lt;&lt;&lt;gridSize, blockSize, 0, stream&gt;&gt;&gt;(d_u, d_u_new, N);
+        
+        // Swap pointers instead of copying
+        double *temp = d_u;
+        d_u = d_u_new;
+        d_u_new = temp;
+    }
+
+    // Copy the final result back to the host
+    CHECK_HIP_ERROR(hipMemcpyAsync(u, d_u, N * N * sizeof(double), hipMemcpyDeviceToHost, stream));
+    CHECK_HIP_ERROR(hipStreamSynchronize(stream));
+
+    // Output final temperature distribution
+    for (int i = 0; i &lt; N; i++) {
+        for (int j = 0; j &lt; N; j++) {
+            std::cout &lt;&lt; u[i * N + j] &lt;&lt; " ";
+        }
+        std::cout &lt;&lt; std::endl;
+    }
+
+    // Cleanup
+    CHECK_HIP_ERROR(hipStreamDestroy(stream));
+    CHECK_HIP_ERROR(hipFree(d_u));
+    CHECK_HIP_ERROR(hipFree(d_u_new));
+    CHECK_HIP_ERROR(hipHostFree(u));
+    CHECK_HIP_ERROR(hipHostFree(u_new));
+
+    return 0;
+} </code></pre>
+    </div>
+
+    </div>
+    
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-c.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-cpp.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-python.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-markdown.min.js"></script>
+</body>
+</html>

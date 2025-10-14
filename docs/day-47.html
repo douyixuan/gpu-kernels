@@ -1,0 +1,351 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Day 47 - GPU Kernels Learning Journey</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            background: #f5f5f5;
+        }
+        
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 2rem 1rem;
+            text-align: center;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        
+        .header h1 {
+            font-size: 2.5rem;
+            margin-bottom: 0.5rem;
+        }
+        
+        .header .subtitle {
+            font-size: 1.1rem;
+            opacity: 0.9;
+        }
+        
+        .nav {
+            background: white;
+            padding: 1rem;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+        
+        .nav-content {
+            max-width: 1200px;
+            margin: 0 auto;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 1rem;
+        }
+        
+        .nav a {
+            color: #667eea;
+            text-decoration: none;
+            padding: 0.5rem 1rem;
+            border-radius: 5px;
+            transition: all 0.3s;
+        }
+        
+        .nav a:hover {
+            background: #667eea;
+            color: white;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 2rem auto;
+            padding: 0 1rem;
+        }
+        
+        .description {
+            background: white;
+            padding: 2rem;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+            margin-bottom: 2rem;
+        }
+        
+        .description h2 {
+            color: #667eea;
+            margin-bottom: 1rem;
+            border-bottom: 2px solid #667eea;
+            padding-bottom: 0.5rem;
+        }
+        
+        .description pre {
+            background: #f5f5f5;
+            padding: 1rem;
+            border-radius: 5px;
+            overflow-x: auto;
+        }
+        
+        .file-section {
+            background: white;
+            margin-bottom: 2rem;
+            border-radius: 10px;
+            overflow: hidden;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+        }
+        
+        .file-section h3 {
+            background: #667eea;
+            color: white;
+            padding: 1rem;
+            margin: 0;
+        }
+        
+        .file-section pre {
+            margin: 0;
+            border-radius: 0;
+        }
+        
+        .file-section code {
+            display: block;
+            padding: 1.5rem;
+            max-height: 600px;
+            overflow: auto;
+        }
+        
+        .no-files {
+            text-align: center;
+            padding: 3rem;
+            color: #999;
+            font-style: italic;
+        }
+        
+        @media (max-width: 768px) {
+            .header h1 {
+                font-size: 1.8rem;
+            }
+            
+            .nav-content {
+                flex-direction: column;
+                text-align: center;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>Day 47</h1>
+        <div class="subtitle">GPU Kernels Learning Journey</div>
+    </div>
+    
+    <nav class="nav">
+        <div class="nav-content">
+            <a href="index.html">← Back to Index</a>
+            <div>
+                <a href="day-46.html">← Day 46</a>
+                <a href="day-48.html">Day 48 →</a>
+            </div>
+        </div>
+    </nav>
+    
+    <div class="container">
+        <div class="description">
+            <h2>Description</h2>
+            <div class="desc-content">
+### Files: `spba_multi_gpu.cpp`
+
+I implemented a multi-GPU Single-Parameter Bees Algorithm (SPBA) using HIP, which leverages parallel GPU execution to evaluate candidate solutions concurrently. In this implementation, the algorithm optimizes a test function (Sphere function) by iteratively refining a population of candidate solutions. A single parameter (α) controls the perturbation magnitude during local search, striking a balance between exploration and exploitation. HIP kernels perform the heavy lifting by calculating objective values in parallel across multiple GPUs, while the CPU orchestrates the selection, local search, and global random search steps. This approach makes the algorithm highly scalable and efficient for large-scale optimization tasks on systems equipped with many GPUs.
+            </div>
+        </div>
+        
+        <h2 style="margin-bottom: 1rem; color: #667eea;">Code Files</h2>
+
+    <div class="file-section">
+        <h3>spba_multi_gpu.cu</h3>
+        <pre><code class="language-cuda">#include &lt;hip/hip_runtime.h&gt;
+#include &lt;iostream&gt;
+#include &lt;vector&gt;
+#include &lt;thread&gt;
+#include &lt;algorithm&gt;
+#include &lt;random&gt;
+#include &lt;chrono&gt;
+
+#define CHECK_HIP_ERROR(err) do { \
+    if (err != hipSuccess) { \
+        std::cerr &lt;&lt; "HIP error: " &lt;&lt; hipGetErrorString(err) &lt;&lt; std::endl; \
+        exit(1); \
+    } \
+} while(0)
+
+__global__ void evaluateCandidatesKernel(const float* candidates, float* fitness, int numCandidates, int d) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx &lt; numCandidates) {
+        float sum = 0.0f;
+        for (int j = 0; j &lt; d; j++) {
+            float x = candidates[idx * d + j];
+            sum += x * x;
+        }
+        fitness[idx] = sum;
+    }
+}
+
+struct Candidate {
+    std::vector&lt;float&gt; position;
+    float fitness;
+};
+
+void evaluateCandidatesOnDevice(int device, const float* candidates, float* fitness, int numCandidates, int d) {
+    hipError_t err;
+    err = hipSetDevice(device);
+    CHECK_HIP_ERROR(err);
+
+    size_t dataSize = numCandidates * d * sizeof(float);
+    float* d_candidates = nullptr;
+    float* d_fitness = nullptr;
+    err = hipMalloc(&amp;d_candidates, dataSize);
+    CHECK_HIP_ERROR(err);
+    err = hipMalloc(&amp;d_fitness, numCandidates * sizeof(float));
+    CHECK_HIP_ERROR(err);
+
+    err = hipMemcpy(d_candidates, candidates, dataSize, hipMemcpyHostToDevice);
+    CHECK_HIP_ERROR(err);
+
+    int threadsPerBlock = 256;
+    int blocks = (numCandidates + threadsPerBlock - 1) / threadsPerBlock;
+    hipLaunchKernelGGL(evaluateCandidatesKernel, dim3(blocks), dim3(threadsPerBlock), 0, 0, d_candidates, d_fitness, numCandidates, d);
+    err = hipDeviceSynchronize();
+    CHECK_HIP_ERROR(err);
+
+    err = hipMemcpy(fitness, d_fitness, numCandidates * sizeof(float), hipMemcpyDeviceToHost);
+    CHECK_HIP_ERROR(err);
+
+    hipFree(d_candidates);
+    hipFree(d_fitness);
+}
+
+void evaluatePopulationMultiGPU(const std::vector&lt;Candidate&gt;&amp; population, int d, int deviceCount, std::vector&lt;float&gt;&amp; fitnessResults) {
+    int total = population.size();
+    std::vector&lt;float&gt; candidateData(total * d);
+    for (int i = 0; i &lt; total; i++) {
+        for (int j = 0; j &lt; d; j++) {
+            candidateData[i * d + j] = population[i].position[j];
+        }
+    }
+    fitnessResults.resize(total);
+
+    int partitionSize = (total + deviceCount - 1) / deviceCount;
+    std::vector&lt;std::thread&gt; threads;
+    for (int dev = 0; dev &lt; deviceCount; dev++) {
+        int start = dev * partitionSize;
+        int end = std::min(start + partitionSize, total);
+        if (start &gt;= end) break;
+        int numCandidates = end - start;
+        float* candidatesSubset = candidateData.data() + start * d;
+        float* fitnessSubset = fitnessResults.data() + start;
+        threads.emplace_back(evaluateCandidatesOnDevice, dev, candidatesSubset, fitnessSubset, numCandidates, d);
+    }
+    for (auto&amp; t : threads) {
+        t.join();
+    }
+}
+
+Candidate randomCandidate(int d, float range, std::mt19937&amp; rng) {
+    Candidate cand;
+    cand.position.resize(d);
+    std::uniform_real_distribution&lt;float&gt; dist(-range, range);
+    for (int i = 0; i &lt; d; i++) {
+        cand.position[i] = dist(rng);
+    }
+    cand.fitness = 0.0f;
+    return cand;
+}
+
+int main() {
+    const int populationSize = 256;
+    const int dimension = 30;
+    const int maxIter = 100;
+    const float alpha = 0.1f;
+    const int numBestSites = populationSize / 10;
+    const int recruitsPerSite = 10;
+    const float searchRange = 10.0f;
+
+    std::random_device rd;
+    std::mt19937 rng(rd());
+
+    std::vector&lt;Candidate&gt; population;
+    for (int i = 0; i &lt; populationSize; i++) {
+        population.push_back(randomCandidate(dimension, searchRange, rng));
+    }
+
+    int deviceCount = 0;
+    hipError_t err = hipGetDeviceCount(&amp;deviceCount);
+    if (err != hipSuccess || deviceCount &lt; 1) {
+        std::cerr &lt;&lt; "No HIP devices found!" &lt;&lt; std::endl;
+        return -1;
+    }
+    std::cout &lt;&lt; "Found " &lt;&lt; deviceCount &lt;&lt; " HIP device(s).\n";
+
+    for (int iter = 0; iter &lt; maxIter; iter++) {
+        std::vector&lt;float&gt; fitnessResults;
+        evaluatePopulationMultiGPU(population, dimension, deviceCount, fitnessResults);
+        for (int i = 0; i &lt; populationSize; i++) {
+            population[i].fitness = fitnessResults[i];
+        }
+
+        std::sort(population.begin(), population.end(), [](const Candidate&amp; a, const Candidate&amp; b) {
+            return a.fitness &lt; b.fitness;
+        });
+
+        std::cout &lt;&lt; "Iteration " &lt;&lt; iter &lt;&lt; ", Best fitness: " &lt;&lt; population[0].fitness &lt;&lt; std::endl;
+
+        for (int i = 0; i &lt; numBestSites; i++) {
+            Candidate bestCandidate = population[i];
+            for (int r = 0; r &lt; recruitsPerSite; r++) {
+                Candidate newCandidate = bestCandidate;
+                for (int j = 0; j &lt; dimension; j++) {
+                    std::uniform_real_distribution&lt;float&gt; perturbDist(-alpha, alpha);
+                    newCandidate.position[j] += perturbDist(rng);
+                }
+                float fitness = 0.0f;
+                for (int j = 0; j &lt; dimension; j++) {
+                    fitness += newCandidate.position[j] * newCandidate.position[j];
+                }
+                newCandidate.fitness = fitness;
+                if (newCandidate.fitness &lt; bestCandidate.fitness) {
+                    bestCandidate = newCandidate;
+                }
+            }
+            population[i] = bestCandidate;
+        }
+
+        for (int i = populationSize / 2; i &lt; populationSize; i++) {
+            population[i] = randomCandidate(dimension, searchRange, rng);
+        }
+    }
+
+    std::cout &lt;&lt; "Optimization completed. Best solution fitness: " &lt;&lt; population[0].fitness &lt;&lt; std::endl;
+    return 0;
+}
+</code></pre>
+    </div>
+
+    </div>
+    
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-c.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-cpp.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-python.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-markdown.min.js"></script>
+</body>
+</html>

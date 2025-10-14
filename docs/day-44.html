@@ -1,0 +1,390 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Day 44 - GPU Kernels Learning Journey</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            background: #f5f5f5;
+        }
+        
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 2rem 1rem;
+            text-align: center;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        
+        .header h1 {
+            font-size: 2.5rem;
+            margin-bottom: 0.5rem;
+        }
+        
+        .header .subtitle {
+            font-size: 1.1rem;
+            opacity: 0.9;
+        }
+        
+        .nav {
+            background: white;
+            padding: 1rem;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+        
+        .nav-content {
+            max-width: 1200px;
+            margin: 0 auto;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 1rem;
+        }
+        
+        .nav a {
+            color: #667eea;
+            text-decoration: none;
+            padding: 0.5rem 1rem;
+            border-radius: 5px;
+            transition: all 0.3s;
+        }
+        
+        .nav a:hover {
+            background: #667eea;
+            color: white;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 2rem auto;
+            padding: 0 1rem;
+        }
+        
+        .description {
+            background: white;
+            padding: 2rem;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+            margin-bottom: 2rem;
+        }
+        
+        .description h2 {
+            color: #667eea;
+            margin-bottom: 1rem;
+            border-bottom: 2px solid #667eea;
+            padding-bottom: 0.5rem;
+        }
+        
+        .description pre {
+            background: #f5f5f5;
+            padding: 1rem;
+            border-radius: 5px;
+            overflow-x: auto;
+        }
+        
+        .file-section {
+            background: white;
+            margin-bottom: 2rem;
+            border-radius: 10px;
+            overflow: hidden;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+        }
+        
+        .file-section h3 {
+            background: #667eea;
+            color: white;
+            padding: 1rem;
+            margin: 0;
+        }
+        
+        .file-section pre {
+            margin: 0;
+            border-radius: 0;
+        }
+        
+        .file-section code {
+            display: block;
+            padding: 1.5rem;
+            max-height: 600px;
+            overflow: auto;
+        }
+        
+        .no-files {
+            text-align: center;
+            padding: 3rem;
+            color: #999;
+            font-style: italic;
+        }
+        
+        @media (max-width: 768px) {
+            .header h1 {
+                font-size: 1.8rem;
+            }
+            
+            .nav-content {
+                flex-direction: column;
+                text-align: center;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>Day 44</h1>
+        <div class="subtitle">GPU Kernels Learning Journey</div>
+    </div>
+    
+    <nav class="nav">
+        <div class="nav-content">
+            <a href="index.html">← Back to Index</a>
+            <div>
+                <a href="day-43.html">← Day 43</a>
+                <a href="day-45.html">Day 45 →</a>
+            </div>
+        </div>
+    </nav>
+    
+    <div class="container">
+        <div class="description">
+            <h2>Description</h2>
+            <div class="desc-content">
+### Files:  `leetgpu_attention.cu`  `leetgpu_conv3d_kernel.cu`
+I completed two challenges on leetgpu.com, both at the hardest level among all challenges.
+            </div>
+        </div>
+        
+        <h2 style="margin-bottom: 1rem; color: #667eea;">Code Files</h2>
+
+    <div class="file-section">
+        <h3>leetgpu_conv3d_kernel.cu</h3>
+        <pre><code class="language-cuda">#include "solve.h"
+#include &lt;cuda_runtime.h&gt;
+#include &lt;stdio.h&gt;
+
+
+__global__ void conv3d_kernel(const float* input, const float* kernel, float* output,
+                              int input_depth, int input_rows, int input_cols,
+                              int kernel_depth, int kernel_rows, int kernel_cols,
+                              int output_depth, int output_rows, int output_cols) {
+
+    int ocol = blockIdx.x * blockDim.x + threadIdx.x;
+    int orow = blockIdx.y * blockDim.y + threadIdx.y;
+    int od   = blockIdx.z * blockDim.z + threadIdx.z;
+    
+    if (ocol &lt; output_cols &amp;&amp; orow &lt; output_rows &amp;&amp; od &lt; output_depth) {
+        float sum = 0.0f;
+
+        for (int kd = 0; kd &lt; kernel_depth; kd++) {
+            for (int kr = 0; kr &lt; kernel_rows; kr++) {
+                for (int kc = 0; kc &lt; kernel_cols; kc++) {
+
+                    int id = od + kd;
+                    int ir = orow + kr;
+                    int ic = ocol + kc;
+                    int input_idx = id * (input_rows * input_cols) + ir * input_cols + ic;
+                    int kernel_idx = kd * (kernel_rows * kernel_cols) + kr * kernel_cols + kc;
+                    sum += input[input_idx] * kernel[kernel_idx];
+                }
+            }
+        }
+        int output_idx = od * (output_rows * output_cols) + orow * output_cols + ocol;
+        output[output_idx] = sum;
+    }
+}
+
+void solve(const float* input, const float* kernel, float* output,
+           int input_depth, int input_rows, int input_cols,
+           int kernel_depth, int kernel_rows, int kernel_cols) {
+    
+    int output_depth = input_depth - kernel_depth + 1;
+    int output_rows  = input_rows - kernel_rows + 1;
+    int output_cols  = input_cols - kernel_cols + 1;
+    
+    size_t input_size  = input_depth * input_rows * input_cols * sizeof(float);
+    size_t kernel_size = kernel_depth * kernel_rows * kernel_cols * sizeof(float);
+    size_t output_size = output_depth * output_rows * output_cols * sizeof(float);
+    
+    float *d_input, *d_kernel, *d_output;
+    cudaMalloc((void**)&amp;d_input, input_size);
+    cudaMalloc((void**)&amp;d_kernel, kernel_size);
+    cudaMalloc((void**)&amp;d_output, output_size);
+    
+    cudaMemcpy(d_input, input, input_size, cudaMemcpyHostToDevice);
+    cudaMemcpy(d_kernel, kernel, kernel_size, cudaMemcpyHostToDevice);
+    
+
+    dim3 blockDim(8, 8, 8);
+    dim3 gridDim((output_cols + blockDim.x - 1) / blockDim.x,
+                 (output_rows + blockDim.y - 1) / blockDim.y,
+                 (output_depth + blockDim.z - 1) / blockDim.z);
+    
+
+    conv3d_kernel&lt;&lt;&lt;gridDim, blockDim&gt;&gt;&gt;(d_input, d_kernel, d_output,
+                                           input_depth, input_rows, input_cols,
+                                           kernel_depth, kernel_rows, kernel_cols,
+                                           output_depth, output_rows, output_cols);
+    
+
+    cudaDeviceSynchronize();
+    
+
+    cudaMemcpy(output, d_output, output_size, cudaMemcpyDeviceToHost);
+
+    cudaFree(d_input);
+    cudaFree(d_kernel);
+    cudaFree(d_output);
+}
+</code></pre>
+    </div>
+
+    <div class="file-section">
+        <h3>leetgpu_attention.cu</h3>
+        <pre><code class="language-cuda">#include "solve.h"
+#include &lt;cuda_runtime.h&gt;
+#include &lt;math.h&gt;
+
+
+__global__ void compute_scores(const float* Q, const float* K, float* scores,
+                               int N, int d_model, int d_k) {
+    int head = blockIdx.z;  
+    int i = blockIdx.y * blockDim.y + threadIdx.y;
+    int j = blockIdx.x * blockDim.x + threadIdx.x;
+    if(i &lt; N &amp;&amp; j &lt; N) {
+        float sum = 0.0f;
+        int offset = head * d_k;
+        for (int k = 0; k &lt; d_k; k++) {
+            float q_val = Q[i * d_model + offset + k];
+            float k_val = K[j * d_model + offset + k];
+            sum += q_val * k_val;
+        }
+        // Scale the dot product by sqrt(d_k)
+        float scale = 1.0f / sqrtf((float)d_k);
+        // Store into scores array (each head gets a contiguous N*N block)
+        scores[ head * N * N + i * N + j ] = sum * scale;
+    }
+}
+
+
+__global__ void softmax_kernel(float* scores, int N) {
+    int head = blockIdx.z;  
+    int row = blockIdx.y * blockDim.y + threadIdx.y;
+    if (row &lt; N) {
+        int base = head * N * N + row * N;
+        
+        float max_val = -1e20f;
+        for (int j = 0; j &lt; N; j++) {
+            float val = scores[ base + j ];
+            if(val &gt; max_val)
+                max_val = val;
+        }
+        
+        float sum = 0.0f;
+        for (int j = 0; j &lt; N; j++) {
+            float exp_val = expf(scores[ base + j ] - max_val);
+            scores[ base + j ] = exp_val; 
+            sum += exp_val;
+        }
+        
+        for (int j = 0; j &lt; N; j++) {
+            scores[ base + j ] /= sum;
+        }
+    }
+}
+
+
+__global__ void compute_output_kernel(const float* scores, const float* V, float* out,
+                                        int N, int d_model, int d_k) {
+    int head = blockIdx.z;
+    int i = blockIdx.y * blockDim.y + threadIdx.y;
+    int k = blockIdx.x * blockDim.x + threadIdx.x; // k in [0, d_k)
+    if (i &lt; N &amp;&amp; k &lt; d_k) {
+        float sum = 0.0f;
+        int offset = head * d_k;
+        for (int j = 0; j &lt; N; j++) {
+            float attn = scores[ head * N * N + i * N + j ];
+            float v_val = V[j * d_model + offset + k];
+            sum += attn * v_val;
+        }
+       
+        out[i * d_model + offset + k] = sum;
+    }
+}
+
+void solve(const float* Q, const float* K, const float* V,
+           float* output, int N, int d_model, int h) {
+    
+    int d_k = d_model / h;
+    
+    
+    float *d_Q, *d_K, *d_V, *d_scores, *d_output;
+    size_t modelBytes = N * d_model * sizeof(float);
+    size_t scoreBytes = h * N * N * sizeof(float);
+    
+    cudaMalloc((void**)&amp;d_Q, modelBytes);
+    cudaMalloc((void**)&amp;d_K, modelBytes);
+    cudaMalloc((void**)&amp;d_V, modelBytes);
+    cudaMalloc((void**)&amp;d_scores, scoreBytes);
+    cudaMalloc((void**)&amp;d_output, modelBytes);
+    
+   
+    cudaMemcpy(d_Q, Q, modelBytes, cudaMemcpyHostToDevice);
+    cudaMemcpy(d_K, K, modelBytes, cudaMemcpyHostToDevice);
+    cudaMemcpy(d_V, V, modelBytes, cudaMemcpyHostToDevice);
+    
+
+    dim3 blockDim1(16, 16);
+    dim3 gridDim1((N + blockDim1.x - 1) / blockDim1.x,
+                  (N + blockDim1.y - 1) / blockDim1.y,
+                  h);
+    compute_scores&lt;&lt;&lt;gridDim1, blockDim1&gt;&gt;&gt;(d_Q, d_K, d_scores, N, d_model, d_k);
+    cudaDeviceSynchronize();
+
+    dim3 blockDim2(1, 256); 
+    dim3 gridDim2(1, (N + blockDim2.y - 1) / blockDim2.y, h);
+    softmax_kernel&lt;&lt;&lt;gridDim2, blockDim2&gt;&gt;&gt;(d_scores, N);
+    cudaDeviceSynchronize();
+    
+    dim3 blockDim3(16, 16);
+    dim3 gridDim3((d_k + blockDim3.x - 1) / blockDim3.x,
+                  (N + blockDim3.y - 1) / blockDim3.y,
+                  h);
+    compute_output_kernel&lt;&lt;&lt;gridDim3, blockDim3&gt;&gt;&gt;(d_scores, d_V, d_output, N, d_model, d_k);
+    cudaDeviceSynchronize();
+    
+    
+    cudaMemcpy(output, d_output, modelBytes, cudaMemcpyDeviceToHost);
+    
+    
+    cudaFree(d_Q);
+    cudaFree(d_K);
+    cudaFree(d_V);
+    cudaFree(d_scores);
+    cudaFree(d_output);
+}
+</code></pre>
+    </div>
+
+    </div>
+    
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-c.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-cpp.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-python.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-markdown.min.js"></script>
+</body>
+</html>

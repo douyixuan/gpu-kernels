@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Day 80 - GPU Kernels Learning Journey</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            background: #f5f5f5;
+        }
+        
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 2rem 1rem;
+            text-align: center;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        
+        .header h1 {
+            font-size: 2.5rem;
+            margin-bottom: 0.5rem;
+        }
+        
+        .header .subtitle {
+            font-size: 1.1rem;
+            opacity: 0.9;
+        }
+        
+        .nav {
+            background: white;
+            padding: 1rem;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+        
+        .nav-content {
+            max-width: 1200px;
+            margin: 0 auto;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 1rem;
+        }
+        
+        .nav a {
+            color: #667eea;
+            text-decoration: none;
+            padding: 0.5rem 1rem;
+            border-radius: 5px;
+            transition: all 0.3s;
+        }
+        
+        .nav a:hover {
+            background: #667eea;
+            color: white;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 2rem auto;
+            padding: 0 1rem;
+        }
+        
+        .description {
+            background: white;
+            padding: 2rem;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+            margin-bottom: 2rem;
+        }
+        
+        .description h2 {
+            color: #667eea;
+            margin-bottom: 1rem;
+            border-bottom: 2px solid #667eea;
+            padding-bottom: 0.5rem;
+        }
+        
+        .description pre {
+            background: #f5f5f5;
+            padding: 1rem;
+            border-radius: 5px;
+            overflow-x: auto;
+        }
+        
+        .file-section {
+            background: white;
+            margin-bottom: 2rem;
+            border-radius: 10px;
+            overflow: hidden;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+        }
+        
+        .file-section h3 {
+            background: #667eea;
+            color: white;
+            padding: 1rem;
+            margin: 0;
+        }
+        
+        .file-section pre {
+            margin: 0;
+            border-radius: 0;
+        }
+        
+        .file-section code {
+            display: block;
+            padding: 1.5rem;
+            max-height: 600px;
+            overflow: auto;
+        }
+        
+        .no-files {
+            text-align: center;
+            padding: 3rem;
+            color: #999;
+            font-style: italic;
+        }
+        
+        @media (max-width: 768px) {
+            .header h1 {
+                font-size: 1.8rem;
+            }
+            
+            .nav-content {
+                flex-direction: column;
+                text-align: center;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>Day 80</h1>
+        <div class="subtitle">GPU Kernels Learning Journey</div>
+    </div>
+    
+    <nav class="nav">
+        <div class="nav-content">
+            <a href="index.html">← Back to Index</a>
+            <div>
+                <a href="day-79.html">← Day 79</a>
+                <a href="day-81.html">Day 81 →</a>
+            </div>
+        </div>
+    </nav>
+    
+    <div class="container">
+        <div class="description">
+            <h2>Description</h2>
+            <div class="desc-content">
+### Files: `3d_average_pooling.cu`
+I implemented a code that performs 3D average pooling on an input tensor.
+            </div>
+        </div>
+        
+        <h2 style="margin-bottom: 1rem; color: #667eea;">Code Files</h2>
+
+    <div class="file-section">
+        <h3>3d_average_pooling.cu</h3>
+        <pre><code class="language-cuda">#include &lt;cuda_runtime.h&gt;
+
+__global__ void avg_pool3d_kernel_optimized(const float* __restrict__ input,
+                                             float* __restrict__ output,
+                                             int H, int W, int D,
+                                             int kernel_size, int stride, int padding,
+                                             int H_out, int W_out, int D_out) {
+    int out_i = blockIdx.x * blockDim.x + threadIdx.x;
+    int out_j = blockIdx.y * blockDim.y + threadIdx.y;
+    int out_k = blockIdx.z * blockDim.z + threadIdx.z;
+
+    if (out_i &lt; H_out &amp;&amp; out_j &lt; W_out &amp;&amp; out_k &lt; D_out) {
+        int in_start_i = out_i * stride - padding;
+        int in_start_j = out_j * stride - padding;
+        int in_start_k = out_k * stride - padding;
+        float sum = 0.0f;
+        const int kernel_volume = kernel_size * kernel_size * kernel_size;
+
+        #pragma unroll
+        for (int m = 0; m &lt; kernel_size; m++) {
+            int cur_i = in_start_i + m;
+            #pragma unroll
+            for (int n = 0; n &lt; kernel_size; n++) {
+                int cur_j = in_start_j + n;
+                #pragma unroll
+                for (int o = 0; o &lt; kernel_size; o++) {
+                    int cur_k = in_start_k + o;
+                    if (cur_i &gt;= 0 &amp;&amp; cur_i &lt; H &amp;&amp;
+                        cur_j &gt;= 0 &amp;&amp; cur_j &lt; W &amp;&amp;
+                        cur_k &gt;= 0 &amp;&amp; cur_k &lt; D) {
+                        int idx = cur_i * (W * D) + cur_j * D + cur_k;
+                        sum += input[idx];
+                    }
+                }
+            }
+        }
+        int out_idx = out_i * (W_out * D_out) + out_j * D_out + out_k;
+        output[out_idx] = sum / static_cast&lt;float&gt;(kernel_volume);
+    }
+}
+
+extern "C" void solution(const float* input, int kernel_size, int stride, int padding,
+                           float* output, size_t H, size_t W, size_t D) {
+    int H_int = static_cast&lt;int&gt;(H);
+    int W_int = static_cast&lt;int&gt;(W);
+    int D_int = static_cast&lt;int&gt;(D);
+
+    int H_out = ((H_int + 2 * padding - kernel_size) / stride) + 1;
+    int W_out = ((W_int + 2 * padding - kernel_size) / stride) + 1;
+    int D_out = ((D_int + 2 * padding - kernel_size) / stride) + 1;
+
+    dim3 blockDim(8, 8, 8);
+    dim3 gridDim((H_out + blockDim.x - 1) / blockDim.x,
+                 (W_out + blockDim.y - 1) / blockDim.y,
+                 (D_out + blockDim.z - 1) / blockDim.z);
+
+    avg_pool3d_kernel_optimized&lt;&lt;&lt;gridDim, blockDim&gt;&gt;&gt;(input, output,
+                                                       H_int, W_int, D_int,
+                                                       kernel_size, stride, padding,
+                                                       H_out, W_out, D_out);
+    cudaDeviceSynchronize();
+}
+</code></pre>
+    </div>
+
+    </div>
+    
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-c.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-cpp.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-python.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-markdown.min.js"></script>
+</body>
+</html>

@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Day 72 - GPU Kernels Learning Journey</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            background: #f5f5f5;
+        }
+        
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 2rem 1rem;
+            text-align: center;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        
+        .header h1 {
+            font-size: 2.5rem;
+            margin-bottom: 0.5rem;
+        }
+        
+        .header .subtitle {
+            font-size: 1.1rem;
+            opacity: 0.9;
+        }
+        
+        .nav {
+            background: white;
+            padding: 1rem;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+        
+        .nav-content {
+            max-width: 1200px;
+            margin: 0 auto;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 1rem;
+        }
+        
+        .nav a {
+            color: #667eea;
+            text-decoration: none;
+            padding: 0.5rem 1rem;
+            border-radius: 5px;
+            transition: all 0.3s;
+        }
+        
+        .nav a:hover {
+            background: #667eea;
+            color: white;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 2rem auto;
+            padding: 0 1rem;
+        }
+        
+        .description {
+            background: white;
+            padding: 2rem;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+            margin-bottom: 2rem;
+        }
+        
+        .description h2 {
+            color: #667eea;
+            margin-bottom: 1rem;
+            border-bottom: 2px solid #667eea;
+            padding-bottom: 0.5rem;
+        }
+        
+        .description pre {
+            background: #f5f5f5;
+            padding: 1rem;
+            border-radius: 5px;
+            overflow-x: auto;
+        }
+        
+        .file-section {
+            background: white;
+            margin-bottom: 2rem;
+            border-radius: 10px;
+            overflow: hidden;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+        }
+        
+        .file-section h3 {
+            background: #667eea;
+            color: white;
+            padding: 1rem;
+            margin: 0;
+        }
+        
+        .file-section pre {
+            margin: 0;
+            border-radius: 0;
+        }
+        
+        .file-section code {
+            display: block;
+            padding: 1.5rem;
+            max-height: 600px;
+            overflow: auto;
+        }
+        
+        .no-files {
+            text-align: center;
+            padding: 3rem;
+            color: #999;
+            font-style: italic;
+        }
+        
+        @media (max-width: 768px) {
+            .header h1 {
+                font-size: 1.8rem;
+            }
+            
+            .nav-content {
+                flex-direction: column;
+                text-align: center;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>Day 72</h1>
+        <div class="subtitle">GPU Kernels Learning Journey</div>
+    </div>
+    
+    <nav class="nav">
+        <div class="nav-content">
+            <a href="index.html">← Back to Index</a>
+            <div>
+                <a href="day-71.html">← Day 71</a>
+                <a href="day-73.html">Day 73 →</a>
+            </div>
+        </div>
+    </nav>
+    
+    <div class="container">
+        <div class="description">
+            <h2>Description</h2>
+            <div class="desc-content">
+### Files: `dyt.cu`
+
+I implemented the DyT (Dynamic Tanh) operation in a standalone CUDA C++ file (`dyt.cu`) without using any external frameworks. The implementation includes both the forward pass and the backward pass, which computes the gradients using atomic operations to safely accumulate values across threads. Memory allocation, data transfers, and kernel launches are manually managed, and a `main` function is provided to test the kernels by processing sample data and printing the results.
+            </div>
+        </div>
+        
+        <h2 style="margin-bottom: 1rem; color: #667eea;">Code Files</h2>
+
+    <div class="file-section">
+        <h3>dyt.cu</h3>
+        <pre><code class="language-cuda">#include &lt;cuda_runtime.h&gt;
+#include &lt;iostream&gt;
+#include &lt;cmath&gt;
+
+#define BLOCK_SIZE 256
+
+__device__ float tanh_activation(float x) {
+    return tanhf(x);
+}
+
+__global__ void dyt_fwd_kernel(
+    const float* x, float* y,
+    const float alpha,
+    const float* gamma, const float* beta,
+    int n_cols
+) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx &lt; n_cols) {
+        float val = alpha * x[idx];
+        y[idx] = gamma[idx] * tanh_activation(val) + beta[idx];
+    }
+}
+
+__global__ void dyt_bwd_kernel(
+    const float* x, const float* dy,
+    float* dx, float* dalpha, float* dgamma, float* dbeta,
+    float alpha, const float* gamma,
+    int n_cols
+) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx &lt; n_cols) {
+        float tanh_ax = tanh_activation(alpha * x[idx]);
+        float sech2_ax = 1 - tanh_ax * tanh_ax;
+        
+        dx[idx] = dy[idx] * gamma[idx] * sech2_ax * alpha;
+        atomicAdd(dalpha, dy[idx] * gamma[idx] * sech2_ax * x[idx]);
+        atomicAdd(&amp;dgamma[idx], dy[idx] * tanh_ax);
+        atomicAdd(&amp;dbeta[idx], dy[idx]);
+    }
+}
+
+void liger_dyt_fwd(float* x, float* y, float alpha, float* gamma, float* beta, int n_cols) {
+    float *d_x, *d_y, *d_gamma, *d_beta;
+    cudaMalloc(&amp;d_x, n_cols * sizeof(float));
+    cudaMalloc(&amp;d_y, n_cols * sizeof(float));
+    cudaMalloc(&amp;d_gamma, n_cols * sizeof(float));
+    cudaMalloc(&amp;d_beta, n_cols * sizeof(float));
+
+    cudaMemcpy(d_x, x, n_cols * sizeof(float), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_gamma, gamma, n_cols * sizeof(float), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_beta, beta, n_cols * sizeof(float), cudaMemcpyHostToDevice);
+    
+    dyt_fwd_kernel&lt;&lt;&lt;(n_cols + BLOCK_SIZE - 1) / BLOCK_SIZE, BLOCK_SIZE&gt;&gt;&gt;(d_x, d_y, alpha, d_gamma, d_beta, n_cols);
+    cudaMemcpy(y, d_y, n_cols * sizeof(float), cudaMemcpyDeviceToHost);
+    
+    cudaFree(d_x);
+    cudaFree(d_y);
+    cudaFree(d_gamma);
+    cudaFree(d_beta);
+}
+
+void liger_dyt_bwd(float* x, float* dy, float* dx, float* dalpha, float* dgamma, float* dbeta, float alpha, float* gamma, int n_cols) {
+    float *d_x, *d_dy, *d_dx, *d_dalpha, *d_dgamma, *d_dbeta, h_dalpha = 0;
+    cudaMalloc(&amp;d_x, n_cols * sizeof(float));
+    cudaMalloc(&amp;d_dy, n_cols * sizeof(float));
+    cudaMalloc(&amp;d_dx, n_cols * sizeof(float));
+    cudaMalloc(&amp;d_dalpha, sizeof(float));
+    cudaMalloc(&amp;d_dgamma, n_cols * sizeof(float));
+    cudaMalloc(&amp;d_dbeta, n_cols * sizeof(float));
+
+    cudaMemcpy(d_x, x, n_cols * sizeof(float), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_dy, dy, n_cols * sizeof(float), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_dalpha, &amp;h_dalpha, sizeof(float), cudaMemcpyHostToDevice);
+    
+    dyt_bwd_kernel&lt;&lt;&lt;(n_cols + BLOCK_SIZE - 1) / BLOCK_SIZE, BLOCK_SIZE&gt;&gt;&gt;(d_x, d_dy, d_dx, d_dalpha, d_dgamma, d_dbeta, alpha, gamma, n_cols);
+    
+    cudaMemcpy(dx, d_dx, n_cols * sizeof(float), cudaMemcpyDeviceToHost);
+    cudaMemcpy(dalpha, d_dalpha, sizeof(float), cudaMemcpyDeviceToHost);
+    cudaMemcpy(dgamma, d_dgamma, n_cols * sizeof(float), cudaMemcpyDeviceToHost);
+    cudaMemcpy(dbeta, d_dbeta, n_cols * sizeof(float), cudaMemcpyDeviceToHost);
+    
+    cudaFree(d_x);
+    cudaFree(d_dy);
+    cudaFree(d_dx);
+    cudaFree(d_dalpha);
+    cudaFree(d_dgamma);
+    cudaFree(d_dbeta);
+}
+
+int main() {
+    const int n_cols = 8;
+    float x[n_cols] = {0.5, -0.3, 0.7, 1.2, -1.5, 0.9, -0.4, 0.2};
+    float gamma[n_cols] = {1, 1, 1, 1, 1, 1, 1, 1};
+    float beta[n_cols] = {0, 0, 0, 0, 0, 0, 0, 0};
+    float alpha = 0.8;
+    float y[n_cols], dx[n_cols], dalpha, dgamma[n_cols], dbeta[n_cols];
+
+    liger_dyt_fwd(x, y, alpha, gamma, beta, n_cols);
+    
+    std::cout &lt;&lt; "Forward Output: ";
+    for (int i = 0; i &lt; n_cols; ++i) {
+        std::cout &lt;&lt; y[i] &lt;&lt; " ";
+    }
+    std::cout &lt;&lt; std::endl;
+
+    float dy[n_cols] = {1, 1, 1, 1, 1, 1, 1, 1};
+    liger_dyt_bwd(x, dy, dx, &amp;dalpha, dgamma, dbeta, alpha, gamma, n_cols);
+    
+    std::cout &lt;&lt; "Backward dx: ";
+    for (int i = 0; i &lt; n_cols; ++i) {
+        std::cout &lt;&lt; dx[i] &lt;&lt; " ";
+    }
+    std::cout &lt;&lt; "\nBackward dalpha: " &lt;&lt; dalpha &lt;&lt; std::endl;
+    return 0;
+}
+</code></pre>
+    </div>
+
+    </div>
+    
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-c.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-cpp.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-python.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-markdown.min.js"></script>
+</body>
+</html>

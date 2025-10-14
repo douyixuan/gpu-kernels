@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Day 4 - GPU Kernels Learning Journey</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            background: #f5f5f5;
+        }
+        
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 2rem 1rem;
+            text-align: center;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        
+        .header h1 {
+            font-size: 2.5rem;
+            margin-bottom: 0.5rem;
+        }
+        
+        .header .subtitle {
+            font-size: 1.1rem;
+            opacity: 0.9;
+        }
+        
+        .nav {
+            background: white;
+            padding: 1rem;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+        
+        .nav-content {
+            max-width: 1200px;
+            margin: 0 auto;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 1rem;
+        }
+        
+        .nav a {
+            color: #667eea;
+            text-decoration: none;
+            padding: 0.5rem 1rem;
+            border-radius: 5px;
+            transition: all 0.3s;
+        }
+        
+        .nav a:hover {
+            background: #667eea;
+            color: white;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 2rem auto;
+            padding: 0 1rem;
+        }
+        
+        .description {
+            background: white;
+            padding: 2rem;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+            margin-bottom: 2rem;
+        }
+        
+        .description h2 {
+            color: #667eea;
+            margin-bottom: 1rem;
+            border-bottom: 2px solid #667eea;
+            padding-bottom: 0.5rem;
+        }
+        
+        .description pre {
+            background: #f5f5f5;
+            padding: 1rem;
+            border-radius: 5px;
+            overflow-x: auto;
+        }
+        
+        .file-section {
+            background: white;
+            margin-bottom: 2rem;
+            border-radius: 10px;
+            overflow: hidden;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+        }
+        
+        .file-section h3 {
+            background: #667eea;
+            color: white;
+            padding: 1rem;
+            margin: 0;
+        }
+        
+        .file-section pre {
+            margin: 0;
+            border-radius: 0;
+        }
+        
+        .file-section code {
+            display: block;
+            padding: 1.5rem;
+            max-height: 600px;
+            overflow: auto;
+        }
+        
+        .no-files {
+            text-align: center;
+            padding: 3rem;
+            color: #999;
+            font-style: italic;
+        }
+        
+        @media (max-width: 768px) {
+            .header h1 {
+                font-size: 1.8rem;
+            }
+            
+            .nav-content {
+                flex-direction: column;
+                text-align: center;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>Day 4</h1>
+        <div class="subtitle">GPU Kernels Learning Journey</div>
+    </div>
+    
+    <nav class="nav">
+        <div class="nav-content">
+            <a href="index.html">← Back to Index</a>
+            <div>
+                <a href="day-3.html">← Day 3</a>
+                <a href="day-5.html">Day 5 →</a>
+            </div>
+        </div>
+    </nav>
+    
+    <div class="container">
+        <div class="description">
+            <h2>Description</h2>
+            <div class="desc-content">
+### File: `PartialSum.cu`
+**Summary:**  
+Worked on parallel reduction to compute the partial sum of an array. Implemented a tree-based reduction algorithm, minimizing warp divergence for better performance.  
+
+**Learned:**  
+- The concept of reduction in parallel programming.
+- Techniques for minimizing warp divergence and balancing workload across threads.
+- How to use shared memory effectively in reduction operations.  
+
+### Reading:  
+- Finished **Chapter 3** of the PMPP book.  
+  - Learned about Scalable Parallel Execution including Resource Assignment and Thread Scheduling and Latency Tolerance
+
+---
+            </div>
+        </div>
+        
+        <h2 style="margin-bottom: 1rem; color: #667eea;">Code Files</h2>
+
+    <div class="file-section">
+        <h3>partialSum.cu</h3>
+        <pre><code class="language-cuda">#include &lt;stdio.h&gt;
+
+__global__ void partialSumKernel(int *input, int *output, int n) {
+    // Shared memory 
+    extern __shared__ int sharedMemory[];
+    
+    int tid = threadIdx.x;
+    int index = blockIdx.x * blockDim.x*2 + tid;
+
+    if (index &lt; n) {
+        // Load input into shared memory and optimize the loading to do coalescing 
+        sharedMemory[tid] = input[index]+input[index+blockDim.x];
+        __syncthreads();
+
+        // Perform inclusive scan in shared memory
+        for (int stride = 1; stride &lt; blockDim.x; stride *= 2) {
+            int temp = 0;
+            if (tid &gt;= stride) {
+                temp = sharedMemory[tid - stride];
+            }
+            __syncthreads();
+            sharedMemory[tid] += temp;
+            __syncthreads();
+        }
+
+        // Write result to global memory
+        output[index] = sharedMemory[tid];
+    }
+}
+
+int main() {
+    const int N = 16;
+    const int blockSize = 8;
+
+    int h_input[N] = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16};
+    int h_output[N];
+
+    int *d_input, *d_output;
+    size_t size = N * sizeof(int);
+
+    cudaMalloc(&amp;d_input, size);
+    cudaMalloc(&amp;d_output, size);
+
+    cudaMemcpy(d_input, h_input, size, cudaMemcpyHostToDevice);
+
+    partialSumKernel&lt;&lt;&lt;N / blockSize, blockSize, blockSize * sizeof(int)&gt;&gt;&gt;(d_input, d_output, N);
+
+    cudaMemcpy(h_output, d_output, size, cudaMemcpyDeviceToHost);
+
+ 
+    printf("Input: ");
+    for (int i = 0; i &lt; N; i++) {
+        printf("%d ", h_input[i]);
+    }
+    printf("\nOutput: ");
+    for (int i = 0; i &lt; N; i++) {
+        printf("%d ", h_output[i]);
+    }
+    printf("\n");
+
+    cudaFree(d_input);
+    cudaFree(d_output);
+
+    return 0;
+}
+</code></pre>
+    </div>
+
+    </div>
+    
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-c.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-cpp.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-python.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-markdown.min.js"></script>
+</body>
+</html>

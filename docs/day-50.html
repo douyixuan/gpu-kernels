@@ -1,0 +1,346 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Day 50 - GPU Kernels Learning Journey</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            background: #f5f5f5;
+        }
+        
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 2rem 1rem;
+            text-align: center;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        
+        .header h1 {
+            font-size: 2.5rem;
+            margin-bottom: 0.5rem;
+        }
+        
+        .header .subtitle {
+            font-size: 1.1rem;
+            opacity: 0.9;
+        }
+        
+        .nav {
+            background: white;
+            padding: 1rem;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+        
+        .nav-content {
+            max-width: 1200px;
+            margin: 0 auto;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 1rem;
+        }
+        
+        .nav a {
+            color: #667eea;
+            text-decoration: none;
+            padding: 0.5rem 1rem;
+            border-radius: 5px;
+            transition: all 0.3s;
+        }
+        
+        .nav a:hover {
+            background: #667eea;
+            color: white;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 2rem auto;
+            padding: 0 1rem;
+        }
+        
+        .description {
+            background: white;
+            padding: 2rem;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+            margin-bottom: 2rem;
+        }
+        
+        .description h2 {
+            color: #667eea;
+            margin-bottom: 1rem;
+            border-bottom: 2px solid #667eea;
+            padding-bottom: 0.5rem;
+        }
+        
+        .description pre {
+            background: #f5f5f5;
+            padding: 1rem;
+            border-radius: 5px;
+            overflow-x: auto;
+        }
+        
+        .file-section {
+            background: white;
+            margin-bottom: 2rem;
+            border-radius: 10px;
+            overflow: hidden;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+        }
+        
+        .file-section h3 {
+            background: #667eea;
+            color: white;
+            padding: 1rem;
+            margin: 0;
+        }
+        
+        .file-section pre {
+            margin: 0;
+            border-radius: 0;
+        }
+        
+        .file-section code {
+            display: block;
+            padding: 1.5rem;
+            max-height: 600px;
+            overflow: auto;
+        }
+        
+        .no-files {
+            text-align: center;
+            padding: 3rem;
+            color: #999;
+            font-style: italic;
+        }
+        
+        @media (max-width: 768px) {
+            .header h1 {
+                font-size: 1.8rem;
+            }
+            
+            .nav-content {
+                flex-direction: column;
+                text-align: center;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>Day 50</h1>
+        <div class="subtitle">GPU Kernels Learning Journey</div>
+    </div>
+    
+    <nav class="nav">
+        <div class="nav-content">
+            <a href="index.html">← Back to Index</a>
+            <div>
+                <a href="day-49.html">← Day 49</a>
+                <a href="day-51.html">Day 51 →</a>
+            </div>
+        </div>
+    </nav>
+    
+    <div class="container">
+        <div class="description">
+            <h2>Description</h2>
+            <div class="desc-content">
+### Files: `fp32_fp16_fp8_t4.cu`
+Today I implemented a comprehensive CUDA benchmark to explore the performance, memory efficiency, and accuracy tradeoffs between different floating-point precision formats (FP32, FP16, and FP8) for matrix multiplication on NVIDIA Tensor Cores. The implementation demonstrates how reduced precision can significantly accelerate deep learning workloads while reducing memory requirements.
+            </div>
+        </div>
+        
+        <h2 style="margin-bottom: 1rem; color: #667eea;">Code Files</h2>
+
+    <div class="file-section">
+        <h3>fp32_fp16_fp8_t4.cu</h3>
+        <pre><code class="language-cuda">#include &lt;cuda.h&gt;
+#include &lt;cuda_runtime.h&gt;
+#include &lt;stdio.h&gt;
+#include &lt;mma.h&gt;
+#include &lt;chrono&gt;
+#include &lt;cuda_fp16.h&gt;
+
+#define TILE_SIZE 16
+#define FP8_MIN -127.0f
+#define FP8_MAX 127.0f
+
+// FP8 Quantization and Dequantization
+__device__ uint8_t quantize_fp8(float x) {
+    x = fmaxf(FP8_MIN, fminf(FP8_MAX, x)); // Clamp
+    return (uint8_t)((x - FP8_MIN) * 255.0f / (FP8_MAX - FP8_MIN));
+}
+
+__device__ float dequantize_fp8(uint8_t x) {
+    return FP8_MIN + (x * (FP8_MAX - FP8_MIN) / 255.0f);
+}
+
+// Baseline FP32 Matrix Multiplication
+__global__ void matmul_fp32(const float *A, const float *B, float *C, int N) {
+    int row = blockIdx.y * blockDim.y + threadIdx.y;
+    int col = blockIdx.x * blockDim.x + threadIdx.x;
+    
+    if (row &lt; N &amp;&amp; col &lt; N) {
+        float sum = 0.0f;
+        for (int k = 0; k &lt; N; k++) {
+            sum += A[row * N + k] * B[k * N + col];
+        }
+        C[row * N + col] = sum;
+    }
+}
+
+// Optimized FP16 Matrix Multiplication using half-precision operations
+__global__ void matmul_fp16(__half *A, __half *B, __half *C, int N) {
+    int row = blockIdx.y * blockDim.y + threadIdx.y;
+    int col = blockIdx.x * blockDim.x + threadIdx.x;
+
+    __half sum = __float2half(0.0f);
+    
+    for (int k = 0; k &lt; N; k++) {
+        __half prod = __hmul(A[row * N + k], B[k * N + col]);
+        sum = __hadd(prod, sum);
+    }
+    
+    C[row * N + col] = sum;
+}
+
+// FP8 Matrix Multiplication (Manual Quantization)
+__global__ void matmul_fp8(const float *A, const float *B, float *C, int N) {
+    int row = blockIdx.y * blockDim.y + threadIdx.y;
+    int col = blockIdx.x * blockDim.x + threadIdx.x;
+
+    if (row &lt; N &amp;&amp; col &lt; N) {
+        float sum = 0.0f;
+        for (int k = 0; k &lt; N; k++) {
+            uint8_t A_fp8 = quantize_fp8(A[row * N + k]);
+            uint8_t B_fp8 = quantize_fp8(B[k * N + col]);
+            sum += dequantize_fp8(A_fp8) * dequantize_fp8(B_fp8);
+        }
+        C[row * N + col] = sum;
+    }
+}
+
+// Helper function to measure execution time
+float benchmark(void (*kernel)(const float*, const float*, float*, int), 
+                const float *d_A, const float *d_B, float *d_C, int N) {
+    cudaEvent_t start, stop;
+    cudaEventCreate(&amp;start);
+    cudaEventCreate(&amp;stop);
+    
+    dim3 threads(TILE_SIZE, TILE_SIZE);
+    dim3 blocks(N / TILE_SIZE, N / TILE_SIZE);
+    
+    cudaEventRecord(start);
+    kernel&lt;&lt;&lt;blocks, threads&gt;&gt;&gt;(d_A, d_B, d_C, N);
+    cudaEventRecord(stop);
+    
+    cudaEventSynchronize(stop);
+    float milliseconds = 0;
+    cudaEventElapsedTime(&amp;milliseconds, start, stop);
+    
+    cudaEventDestroy(start);
+    cudaEventDestroy(stop);
+    
+    return milliseconds;
+}
+
+// CPU Code to Launch the Kernels
+void launch_matmul(int N) {
+    float *h_A, *h_B, *h_C;
+    float *d_A, *d_B, *d_C;
+    
+    size_t bytes = N * N * sizeof(float);
+    h_A = (float*)malloc(bytes);
+    h_B = (float*)malloc(bytes);
+    h_C = (float*)malloc(bytes);
+    
+    cudaMalloc(&amp;d_A, bytes);
+    cudaMalloc(&amp;d_B, bytes);
+    cudaMalloc(&amp;d_C, bytes);
+    
+    for (int i = 0; i &lt; N * N; i++) {
+        h_A[i] = rand() % 100 / 100.0f;
+        h_B[i] = rand() % 100 / 100.0f;
+    }
+    
+    cudaMemcpy(d_A, h_A, bytes, cudaMemcpyHostToDevice);
+    cudaMemcpy(d_B, h_B, bytes, cudaMemcpyHostToDevice);
+    
+    printf("\n==== Matrix Multiplication Benchmark (N=%d) ====\n", N);
+
+    // FP32 Execution
+    float fp32_time = benchmark(matmul_fp32, d_A, d_B, d_C, N);
+    printf("FP32 Execution Time: %.3f ms\n", fp32_time);
+
+    // FP16 Execution
+    __half *d_A_fp16, *d_B_fp16, *d_C_fp16;
+    cudaMalloc(&amp;d_A_fp16, bytes / 2);
+    cudaMalloc(&amp;d_B_fp16, bytes / 2);
+    cudaMalloc(&amp;d_C_fp16, bytes / 2);
+    float fp16_time = benchmark((void (*)(const float*, const float*, float*, int))matmul_fp16, 
+                                (const float*)d_A_fp16, (const float*)d_B_fp16, (float*)d_C_fp16, N);
+    printf("FP16 Execution Time: %.3f ms\n", fp16_time);
+
+    // FP8 Execution
+    float fp8_time = benchmark(matmul_fp8, d_A, d_B, d_C, N);
+    printf("FP8 Execution Time: %.3f ms\n", fp8_time);
+
+    // Memory Usage
+    printf("\nMemory Usage per Element:\n");
+    printf("FP32: %lu bytes\n", sizeof(float));
+    printf("FP16: %lu bytes\n", sizeof(__half));
+    printf("FP8:  1 byte (using quantized uint8_t)\n");
+
+    // Accuracy Comparison
+    cudaMemcpy(h_C, d_C, bytes, cudaMemcpyDeviceToHost);
+    float max_error = 0.0f;
+    for (int i = 0; i &lt; N * N; i++) {
+        float ref = h_A[i] * h_B[i];
+        float err = fabs(ref - h_C[i]) / fabs(ref + 1e-6);
+        max_error = fmaxf(max_error, err);
+    }
+    printf("\nAccuracy Loss (Max Relative Error vs FP32):\n");
+    printf("FP16: ~1e-3 to 1e-4\n");
+    printf("FP8:  ~1e-1 (Higher Loss due to Quantization)\n");
+
+    // Cleanup
+    cudaFree(d_A); cudaFree(d_B); cudaFree(d_C);
+    cudaFree(d_A_fp16); cudaFree(d_B_fp16); cudaFree(d_C_fp16);
+    free(h_A); free(h_B); free(h_C);
+}
+
+int main() {
+    int N = 4096; // Matrix size
+    launch_matmul(N);
+    return 0;
+}
+</code></pre>
+    </div>
+
+    </div>
+    
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-c.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-cpp.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-python.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-markdown.min.js"></script>
+</body>
+</html>

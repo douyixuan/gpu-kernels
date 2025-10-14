@@ -1,0 +1,563 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Day 32 - GPU Kernels Learning Journey</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            background: #f5f5f5;
+        }
+        
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 2rem 1rem;
+            text-align: center;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        
+        .header h1 {
+            font-size: 2.5rem;
+            margin-bottom: 0.5rem;
+        }
+        
+        .header .subtitle {
+            font-size: 1.1rem;
+            opacity: 0.9;
+        }
+        
+        .nav {
+            background: white;
+            padding: 1rem;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+        
+        .nav-content {
+            max-width: 1200px;
+            margin: 0 auto;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 1rem;
+        }
+        
+        .nav a {
+            color: #667eea;
+            text-decoration: none;
+            padding: 0.5rem 1rem;
+            border-radius: 5px;
+            transition: all 0.3s;
+        }
+        
+        .nav a:hover {
+            background: #667eea;
+            color: white;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 2rem auto;
+            padding: 0 1rem;
+        }
+        
+        .description {
+            background: white;
+            padding: 2rem;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+            margin-bottom: 2rem;
+        }
+        
+        .description h2 {
+            color: #667eea;
+            margin-bottom: 1rem;
+            border-bottom: 2px solid #667eea;
+            padding-bottom: 0.5rem;
+        }
+        
+        .description pre {
+            background: #f5f5f5;
+            padding: 1rem;
+            border-radius: 5px;
+            overflow-x: auto;
+        }
+        
+        .file-section {
+            background: white;
+            margin-bottom: 2rem;
+            border-radius: 10px;
+            overflow: hidden;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+        }
+        
+        .file-section h3 {
+            background: #667eea;
+            color: white;
+            padding: 1rem;
+            margin: 0;
+        }
+        
+        .file-section pre {
+            margin: 0;
+            border-radius: 0;
+        }
+        
+        .file-section code {
+            display: block;
+            padding: 1.5rem;
+            max-height: 600px;
+            overflow: auto;
+        }
+        
+        .no-files {
+            text-align: center;
+            padding: 3rem;
+            color: #999;
+            font-style: italic;
+        }
+        
+        @media (max-width: 768px) {
+            .header h1 {
+                font-size: 1.8rem;
+            }
+            
+            .nav-content {
+                flex-direction: column;
+                text-align: center;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>Day 32</h1>
+        <div class="subtitle">GPU Kernels Learning Journey</div>
+    </div>
+    
+    <nav class="nav">
+        <div class="nav-content">
+            <a href="index.html">← Back to Index</a>
+            <div>
+                <a href="day-31.html">← Day 31</a>
+                <a href="day-33.html">Day 33 →</a>
+            </div>
+        </div>
+    </nav>
+    
+    <div class="container">
+        <div class="description">
+            <h2>Description</h2>
+            <div class="desc-content">
+### File: `sgemm.cpp`, `sgemm.h`, `kernel3_registers.cpp`, `kernel3_registers.h`
+**Summary:**  
+Implemented and optimized SGEMM (Single-precision General Matrix Multiplication) for AMD GPUs with register tiling. The implementation achieved impressive performance metrics, particularly for small matrix sizes.
+
+**Performance Highlights:**
+- Exceptional performance for small matrices (N=1024):
+  - Custom implementation: 2029.76 GFLOPS
+  - ~49x faster than rocBLAS for small matrices
+- Competitive performance for medium/large matrices:
+  - Up to 18565.31 GFLOPS at N=4096
+  - Efficient scaling up to 4096x4096 matrices
+
+**Learned:**
+- Optimization techniques for matrix multiplication on AMD GPUs
+- Register-level optimizations for improved performance
+- Trade-offs between custom implementations and vendor libraries
+- Performance scaling characteristics across different matrix sizes
+
+### Reading:
+- Analyzed benchmark results comparing custom SGEMM implementation with rocBLAS
+- Studied performance characteristics and scaling patterns for different matrix sizes
+- Following this article: https://seb-v.github.io/optimization/update/2025/01/20/Fast-GPU-Matrix-multiplication.html
+---
+            </div>
+        </div>
+        
+        <h2 style="margin-bottom: 1rem; color: #667eea;">Code Files</h2>
+
+    <div class="file-section">
+        <h3>benchmark_sgemm.cpp</h3>
+        <pre><code class="language-cpp">#include &lt;hip/hip_runtime.h&gt;
+#include &lt;rocblas/rocblas.h&gt;
+#include &lt;iostream&gt;
+#include &lt;vector&gt;
+#include &lt;chrono&gt;
+#include &lt;random&gt;
+#include &lt;iomanip&gt;
+#include "sgemm.h"
+#include "kernel3_registers.h"
+
+// Helper function to initialize matrices with random values
+void initialize_matrix(std::vector&lt;float&gt;&amp; matrix, int size) {
+    std::random_device rd;
+    std::mt19937 gen(rd());
+    std::uniform_real_distribution&lt;float&gt; dis(-1.0f, 1.0f);
+    for (int i = 0; i &lt; size * size; i++) {
+        matrix[i] = dis(gen);
+    }
+}
+
+// Helper function to calculate difference between matrices
+float matrix_diff(const std::vector&lt;float&gt;&amp; a, const std::vector&lt;float&gt;&amp; b, int size) {
+    float max_diff = 0.0f;
+    for (int i = 0; i &lt; size * size; i++) {
+        float diff = std::abs(a[i] - b[i]);
+        max_diff = std::max(max_diff, diff);
+    }
+    return max_diff;
+}
+
+// Helper function to calculate GFLOPS
+double calculate_gflops(int N, double time_ms) {
+    // For matrix multiplication: 2 * N^3 operations
+    double operations = 2.0 * std::pow(N, 3);
+    double time_s = time_ms / 1000.0;
+    return (operations / time_s) / 1e9;
+}
+
+// Helper function to check HIP errors
+#define CHECK_HIP(cmd) \
+    do { \
+        hipError_t error = cmd; \
+        if (error != hipSuccess) { \
+            std::cerr &lt;&lt; "HIP error: " &lt;&lt; hipGetErrorString(error) &lt;&lt; " at " &lt;&lt; __FILE__ &lt;&lt; ":" &lt;&lt; __LINE__ &lt;&lt; std::endl; \
+            exit(1); \
+        } \
+    } while(0)
+
+int main() {
+    std::cout &lt;&lt; "Starting SGEMM benchmark..." &lt;&lt; std::endl;
+
+    // Test different matrix sizes
+    std::vector&lt;int&gt; matrix_sizes = {1024, 2048, 4096, 8192};
+    const float alpha = 1.0f;
+    const float beta = 0.0f;
+
+    // Initialize rocBLAS
+    rocblas_handle handle;
+    rocblas_status status = rocblas_create_handle(&amp;handle);
+    if (status != rocblas_status_success) {
+        std::cerr &lt;&lt; "Failed to initialize rocBLAS" &lt;&lt; std::endl;
+        return 1;
+    }
+
+    std::cout &lt;&lt; std::setw(10) &lt;&lt; "Size" 
+              &lt;&lt; std::setw(20) &lt;&lt; "Custom (GFLOPS)"
+              &lt;&lt; std::setw(20) &lt;&lt; "rocBLAS (GFLOPS)"
+              &lt;&lt; std::setw(15) &lt;&lt; "Max Diff"
+              &lt;&lt; std::setw(15) &lt;&lt; "Time (ms)" &lt;&lt; std::endl;
+    std::cout &lt;&lt; std::string(80, '-') &lt;&lt; std::endl;
+
+    for (int N : matrix_sizes) {
+        std::cout &lt;&lt; "Testing size " &lt;&lt; N &lt;&lt; "x" &lt;&lt; N &lt;&lt; "..." &lt;&lt; std::endl;
+
+        // Allocate host memory
+        std::vector&lt;float&gt; h_a(N * N);
+        std::vector&lt;float&gt; h_b(N * N);
+        std::vector&lt;float&gt; h_c_custom(N * N, 0.0f);
+        std::vector&lt;float&gt; h_c_rocblas(N * N, 0.0f);
+
+        std::cout &lt;&lt; "Initializing matrices..." &lt;&lt; std::endl;
+        // Initialize matrices
+        initialize_matrix(h_a, N);
+        initialize_matrix(h_b, N);
+
+        // Allocate device memory
+        float *d_a, *d_b, *d_c_custom, *d_c_rocblas;
+        std::cout &lt;&lt; "Allocating device memory..." &lt;&lt; std::endl;
+        CHECK_HIP(hipMalloc(&amp;d_a, N * N * sizeof(float)));
+        CHECK_HIP(hipMalloc(&amp;d_b, N * N * sizeof(float)));
+        CHECK_HIP(hipMalloc(&amp;d_c_custom, N * N * sizeof(float)));
+        CHECK_HIP(hipMalloc(&amp;d_c_rocblas, N * N * sizeof(float)));
+
+        // Copy data to device
+        std::cout &lt;&lt; "Copying data to device..." &lt;&lt; std::endl;
+        CHECK_HIP(hipMemcpy(d_a, h_a.data(), N * N * sizeof(float), hipMemcpyHostToDevice));
+        CHECK_HIP(hipMemcpy(d_b, h_b.data(), N * N * sizeof(float), hipMemcpyHostToDevice));
+
+        // Benchmark custom kernel
+        std::cout &lt;&lt; "Running custom kernel..." &lt;&lt; std::endl;
+        Kernel3Registers kernel;
+        kernel.init();
+
+        auto start = std::chrono::high_resolution_clock::now();
+        kernel.run(d_a, d_b, d_c_custom, alpha, beta, N);
+        CHECK_HIP(hipDeviceSynchronize());
+        auto end = std::chrono::high_resolution_clock::now();
+        auto custom_duration = std::chrono::duration_cast&lt;std::chrono::microseconds&gt;(end - start);
+        double custom_time_ms = custom_duration.count() / 1000.0;
+        double custom_gflops = calculate_gflops(N, custom_time_ms);
+
+        // Benchmark rocBLAS
+        std::cout &lt;&lt; "Running rocBLAS..." &lt;&lt; std::endl;
+        start = std::chrono::high_resolution_clock::now();
+        status = rocblas_sgemm(handle, rocblas_operation_none, rocblas_operation_none,
+                      N, N, N,
+                      &amp;alpha,
+                      d_a, N,
+                      d_b, N,
+                      &amp;beta,
+                      d_c_rocblas, N);
+        if (status != rocblas_status_success) {
+            std::cerr &lt;&lt; "rocBLAS SGEMM failed" &lt;&lt; std::endl;
+            return 1;
+        }
+        CHECK_HIP(hipDeviceSynchronize());
+        end = std::chrono::high_resolution_clock::now();
+        auto rocblas_duration = std::chrono::duration_cast&lt;std::chrono::microseconds&gt;(end - start);
+        double rocblas_time_ms = rocblas_duration.count() / 1000.0;
+        double rocblas_gflops = calculate_gflops(N, rocblas_time_ms);
+
+        // Copy results back to host
+        std::cout &lt;&lt; "Copying results back to host..." &lt;&lt; std::endl;
+        CHECK_HIP(hipMemcpy(h_c_custom.data(), d_c_custom, N * N * sizeof(float), hipMemcpyDeviceToHost));
+        CHECK_HIP(hipMemcpy(h_c_rocblas.data(), d_c_rocblas, N * N * sizeof(float), hipMemcpyDeviceToHost));
+
+        // Calculate difference
+        float max_diff = matrix_diff(h_c_custom, h_c_rocblas, N);
+
+        // Print results
+        std::cout &lt;&lt; std::setw(10) &lt;&lt; N
+                  &lt;&lt; std::setw(20) &lt;&lt; std::fixed &lt;&lt; std::setprecision(2) &lt;&lt; custom_gflops
+                  &lt;&lt; std::setw(20) &lt;&lt; rocblas_gflops
+                  &lt;&lt; std::setw(15) &lt;&lt; std::scientific &lt;&lt; std::setprecision(3) &lt;&lt; max_diff
+                  &lt;&lt; std::setw(15) &lt;&lt; std::fixed &lt;&lt; std::setprecision(2) &lt;&lt; custom_time_ms &lt;&lt; std::endl;
+
+        // Cleanup
+        CHECK_HIP(hipFree(d_a));
+        CHECK_HIP(hipFree(d_b));
+        CHECK_HIP(hipFree(d_c_custom));
+        CHECK_HIP(hipFree(d_c_rocblas));
+    }
+
+    rocblas_destroy_handle(handle);
+    return 0;
+} </code></pre>
+    </div>
+
+    <div class="file-section">
+        <h3>sgemm.h</h3>
+        <pre><code class="language-c">#pragma once
+
+class SGEMM {
+public:
+    virtual void init() = 0;
+    virtual void run(float *d_a, float *d_b, float *d_c, float alpha, float beta, int N) = 0;
+    virtual void finalize() = 0;
+    virtual ~SGEMM() = default;
+}; </code></pre>
+    </div>
+
+    <div class="file-section">
+        <h3>kernel3_registers.h</h3>
+        <pre><code class="language-c">#pragma once
+#include "sgemm.h"
+
+class Kernel3Registers : public SGEMM {
+public:
+    void init() override;
+    void run(float *d_a, float *d_b, float *d_c, float alpha, float beta, int N) override;
+    void finalize() override;
+}; </code></pre>
+    </div>
+
+    <div class="file-section">
+        <h3>sgemm.cpp</h3>
+        <pre><code class="language-cpp">#include "sgemm.h"
+
+</code></pre>
+    </div>
+
+    <div class="file-section">
+        <h3>kernel3_registers.cpp</h3>
+        <pre><code class="language-cpp">#include &lt;hip/hip_runtime.h&gt;
+#include "kernel3_registers.h"
+
+#define BLOCK_SIZE 256
+__global__ void kernel3_registers(float *a, float *b, float *c, int N, float alpha, float beta)
+{
+    // Block Tile size
+    constexpr int BN = 128;
+    constexpr int BM = 128;
+    // Number of Row or column we read per batch
+    constexpr int BK = 8;
+
+    // Thread Tile size
+    constexpr int TN = 4;
+    constexpr int TM = 4;
+
+    constexpr int nbWaves = BLOCK_SIZE / 32;
+    // Wave Tile size 
+    constexpr int WN = 64;
+    constexpr int WM = BN * BM / nbWaves / WN;
+
+    // Number of wave on X &amp; Y axis in the Block tile
+    constexpr int nbWaveX = BN / WN;
+    constexpr int nbWaveY = BM / WM;
+
+    const int waveIndex = threadIdx.x / 32;
+    const int waveIdx = waveIndex % nbWaveX;
+    const int waveIdy = waveIndex / nbWaveX;
+    const int indexInWave = threadIdx.x % 32;
+
+    // A wave is a block of 8x4 of the output matrix
+    constexpr int nbThreadXPerWave = 8;
+    constexpr int nbThreadYPerWave = 4;
+
+    // Thread coordinates in Wave
+    const int idxInWave = indexInWave % nbThreadXPerWave;
+    const int idyInWave = indexInWave / nbThreadXPerWave;
+
+    constexpr int nbIterWaveN = WN / (nbThreadXPerWave * TN);
+    constexpr int nbIterWaveM = WM / (nbThreadYPerWave * TM);
+
+    // Wave Sub-tile size
+    constexpr int SUBWN = WN / nbIterWaveN;
+    constexpr int SUBWM = WM / nbIterWaveM;
+
+    // Thread mapping to read BKxBN block from A
+    int rAIdx = threadIdx.x % BK;
+    int rAIdy = threadIdx.x / BK;
+    // Thread mapping to read BNxBK block from B
+    int rBIdx = threadIdx.x % BN;
+    int rBIdy = threadIdx.x / BN;
+
+    constexpr int strideReadB = BLOCK_SIZE / BN;
+    constexpr int strideReadA = BLOCK_SIZE / BK;
+    constexpr int nbReadsB = BN * BK / BLOCK_SIZE;
+    constexpr int nbReadsA = BM * BK / BLOCK_SIZE;
+
+    float A_col[nbIterWaveM * TM];
+    float B_row[nbIterWaveN * TN];
+
+    __shared__ float As[BK][BM];
+    __shared__ float Bs[BK][BN];
+
+    float c_regs[TM * nbIterWaveM * TN * nbIterWaveN] = {0.0f};
+
+    // Iteration over BK blocks.
+    for (int kId = 0; kId &lt; N; kId += BK)
+    {
+        // We populate the Shared Memory with Ks row and columns
+        for (int i = 0; i &lt; nbReadsB; i++)
+        {
+            int index_x = BN * blockIdx.x + rBIdx;
+            int index_y = rBIdy + i * strideReadB + kId;
+            Bs[index_y % BK][index_x % BN] = b[N * index_y + index_x];
+        }
+
+        for (int i = 0; i &lt; nbReadsA; i++)
+        {
+            int index_x = rAIdx + kId;
+            int index_y = BM * blockIdx.y + rAIdy + i * strideReadA;
+            As[(index_x % BK)][(index_y % BM)] = a[N * index_y + index_x];
+        }
+
+        __syncthreads();
+        for (int k = 0; k &lt; BK; k += 1)
+        {
+            // we cache A &amp; B for the entire Wave tile
+            for (int iterWave = 0; iterWave &lt; nbIterWaveN; iterWave++)
+            {
+                for (int i = 0; i &lt; TN; i++)
+                {
+                    int index = waveIdx * WN +     // waveId
+                                iterWave * SUBWN + // wave subtile
+                                TN * idxInWave +
+                                +i;
+                    B_row[iterWave * TN + i] = Bs[k][index];
+                }
+            }
+
+            for (int iterWave = 0; iterWave &lt; nbIterWaveM; iterWave++)
+            {
+                for (int i = 0; i &lt; TM; i++)
+                {
+                    int index = waveIdy * WM +     // waveId
+                                iterWave * SUBWM + // wave subtile
+                                TM * idyInWave +
+                                i;
+
+                    A_col[iterWave * TM + i] = As[k][index];
+                }
+            }
+
+            // we accumulate to C_regs
+            for (int iterWaveM = 0; iterWaveM &lt; nbIterWaveM; iterWaveM++)
+            {
+                for (int iterWaveN = 0; iterWaveN &lt; nbIterWaveN; iterWaveN++)
+                {
+                    for (int yt = 0; yt &lt; TM; yt++)
+                    {
+                        for (int xt = 0; xt &lt; TN; xt++)
+                        {
+                            const int x = iterWaveN * TN + xt;
+                            const int y = iterWaveM * TM + yt;
+                            c_regs[y * TN * nbIterWaveN + x] += A_col[y] * B_row[x];
+                        }
+                    }
+                }
+            }
+        }
+        __syncthreads();
+    }
+
+    for (int iterWaveM = 0; iterWaveM &lt; nbIterWaveM; iterWaveM++)
+    {
+        for (int iterWaveN = 0; iterWaveN &lt; nbIterWaveN; iterWaveN++)
+        {
+            int xOut = blockIdx.x * BN + waveIdx * WN + iterWaveN * SUBWN + TN * idxInWave;
+            int yOut = blockIdx.y * BM + waveIdy * WM + iterWaveM * SUBWM + TM * idyInWave;
+            for (int yt = 0; yt &lt; TM; yt++)
+            {
+                for (int xt = 0; xt &lt; TN; xt++)
+                {
+                    int indexC = N * (yOut + yt) + xOut + xt;
+                    c[indexC] = beta * c[indexC] + alpha * c_regs[TN * nbIterWaveN * (iterWaveM * TM + yt) + (iterWaveN * TN + xt)];
+                }
+            }
+        }
+    }
+}
+
+void Kernel3Registers::init()
+{
+}
+
+void Kernel3Registers::run(float *d_a, float *d_b, float *d_c, float alpha, float beta, int N)
+{
+    auto threadsPerBlock = dim3(BLOCK_SIZE);
+    auto blocksPerGrid = dim3(N / 128, N / 128);
+    hipLaunchKernelGGL(kernel3_registers, blocksPerGrid, threadsPerBlock, 0, 0, d_a, d_b, d_c, N, alpha, beta);
+}
+
+void Kernel3Registers::finalize()
+{
+} </code></pre>
+    </div>
+
+    </div>
+    
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-c.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-cpp.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-python.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-markdown.min.js"></script>
+</body>
+</html>

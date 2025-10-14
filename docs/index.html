@@ -1,0 +1,685 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GPU Kernels - 100 Days Learning Journey</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            background: #f5f5f5;
+        }
+        
+        .hero {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 4rem 1rem;
+            text-align: center;
+        }
+        
+        .hero h1 {
+            font-size: 3rem;
+            margin-bottom: 1rem;
+            font-weight: 700;
+        }
+        
+        .hero p {
+            font-size: 1.3rem;
+            opacity: 0.95;
+            max-width: 800px;
+            margin: 0 auto 2rem;
+        }
+        
+        .hero .links {
+            display: flex;
+            gap: 1rem;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+        
+        .hero .links a {
+            color: white;
+            text-decoration: none;
+            padding: 0.8rem 1.5rem;
+            border: 2px solid white;
+            border-radius: 5px;
+            transition: all 0.3s;
+            font-weight: 500;
+        }
+        
+        .hero .links a:hover {
+            background: white;
+            color: #667eea;
+        }
+        
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 3rem 1rem;
+        }
+        
+        .section-title {
+            text-align: center;
+            font-size: 2.5rem;
+            color: #333;
+            margin-bottom: 3rem;
+            font-weight: 700;
+        }
+        
+        .day-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 2rem;
+        }
+        
+        .day-card {
+            background: white;
+            border-radius: 10px;
+            padding: 1.5rem;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+            transition: all 0.3s;
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .day-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 5px 20px rgba(102, 126, 234, 0.2);
+        }
+        
+        .day-number {
+            font-size: 1.8rem;
+            font-weight: 700;
+            color: #667eea;
+            margin-bottom: 0.5rem;
+        }
+        
+        .day-preview {
+            color: #666;
+            flex-grow: 1;
+            margin-bottom: 1rem;
+            font-size: 0.95rem;
+            line-height: 1.5;
+        }
+        
+        .day-link {
+            color: #667eea;
+            text-decoration: none;
+            font-weight: 600;
+            transition: all 0.3s;
+            display: inline-block;
+        }
+        
+        .day-link:hover {
+            color: #764ba2;
+            transform: translateX(5px);
+        }
+        
+        .footer {
+            background: #333;
+            color: white;
+            text-align: center;
+            padding: 2rem 1rem;
+            margin-top: 4rem;
+        }
+        
+        .footer a {
+            color: #667eea;
+            text-decoration: none;
+        }
+        
+        .footer a:hover {
+            text-decoration: underline;
+        }
+        
+        @media (max-width: 768px) {
+            .hero h1 {
+                font-size: 2rem;
+            }
+            
+            .hero p {
+                font-size: 1.1rem;
+            }
+            
+            .section-title {
+                font-size: 2rem;
+            }
+            
+            .day-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="hero">
+        <h1>🚀 GPU Kernels Learning Journey</h1>
+        <p>A 100-day journey of learning GPU programming and parallel computing with CUDA, HIP, and more</p>
+        <div class="links">
+            <a href="https://github.com/douyixuan/gpu-kernels" target="_blank">GitHub Repository</a>
+            <a href="https://hamdi.bearblog.dev/" target="_blank">Blog</a>
+        </div>
+    </div>
+    
+    <div class="container">
+        <h2 class="section-title">100 Days of GPU Programming</h2>
+        <div class="day-grid">
+
+        <div class="day-card">
+            <div class="day-number">Day 1</div>
+            <div class="day-preview">**Summary:**</div>
+            <a href="day-1.html" class="day-link">View Details →</a>
+        </div>
+        <div class="day-card">
+            <div class="day-number">Day 2</div>
+            <div class="day-preview">**Summary:**</div>
+            <a href="day-2.html" class="day-link">View Details →</a>
+        </div>
+        <div class="day-card">
+            <div class="day-number">Day 3</div>
+            <div class="day-preview">**Summary:**</div>
+            <a href="day-3.html" class="day-link">View Details →</a>
+        </div>
+        <div class="day-card">
+            <div class="day-number">Day 4</div>
+            <div class="day-preview">**Summary:**</div>
+            <a href="day-4.html" class="day-link">View Details →</a>
+        </div>
+        <div class="day-card">
+            <div class="day-number">Day 5</div>
+            <div class="day-preview">**Summary:**</div>
+            <a href="day-5.html" class="day-link">View Details →</a>
+        </div>
+        <div class="day-card">
+            <div class="day-number">Day 6</div>
+            <div class="day-preview">**Summary:**</div>
+            <a href="day-6.html" class="day-link">View Details →</a>
+        </div>
+        <div class="day-card">
+            <div class="day-number">Day 7</div>
+            <div class="day-preview">**Summary:**</div>
+            <a href="day-7.html" class="day-link">View Details →</a>
+        </div>
+        <div class="day-card">
+            <div class="day-number">Day 8</div>
+            <div class="day-preview">**Summary:**</div>
+            <a href="day-8.html" class="day-link">View Details →</a>
+        </div>
+        <div class="day-card">
+            <div class="day-number">Day 9</div>
+            <div class="day-preview">Click to view details</div>
+            <a href="day-9.html" class="day-link">View Details →</a>
+        </div>
+        <div class="day-card">
+            <div class="day-number">Day 10</div>
+            <div class="day-preview">Click to view details</div>
+            <a href="day-10.html" class="day-link">View Details →</a>
+        </div>
+        <div class="day-card">
+            <div class="day-number">Day 11</div>
+            <div class="day-preview">Click to view details</div>
+            <a href="day-11.html" class="day-link">View Details →</a>
+        </div>
+        <div class="day-card">
+            <div class="day-number">Day 12</div>
+            <div class="day-preview">**Summary:**</div>
+            <a href="day-12.html" class="day-link">View Details →</a>
+        </div>
+        <div class="day-card">
+            <div class="day-number">Day 13</div>
+            <div class="day-preview">I coded a Breadth first search optimized kernel, check this for more details: [BFS](./day%2013/Bfs/README.md) .</div>
+            <a href="day-13.html" class="day-link">View Details →</a>
+        </div>
+        <div class="day-card">
+            <div class="day-number">Day 14</div>
+            <div class="day-preview">**Summary:**</div>
+            <a href="day-14.html" class="day-link">View Details →</a>
+        </div>
+        <div class="day-card">
+            <div class="day-number">Day 15</div>
+            <div class="day-preview">Click to view details</div>
+            <a href="day-15.html" class="day-link">View Details →</a>
+        </div>
+        <div class="day-card">
+            <div class="day-number">Day 16</div>
+            <div class="day-preview">Click to view details</div>
+            <a href="day-16.html" class="day-link">View Details →</a>
+        </div>
+        <div class="day-card">
+            <div class="day-number">Day 17</div>
+            <div class="day-preview">Click to view details</div>
+            <a href="day-17.html" class="day-link">View Details →</a>
+        </div>
+        <div class="day-card">
+            <div class="day-number">Day 18</div>
+            <div class="day-preview">**Summary:**</div>
+            <a href="day-18.html" class="day-link">View Details →</a>
+        </div>
+        <div class="day-card">
+            <div class="day-number">Day 19</div>
+            <div class="day-preview">**Summary:**</div>
+            <a href="day-19.html" class="day-link">View Details →</a>
+        </div>
+        <div class="day-card">
+            <div class="day-number">Day 20</div>
+            <div class="day-preview">**Summary:**</div>
+            <a href="day-20.html" class="day-link">View Details →</a>
+        </div>
+        <div class="day-card">
+            <div class="day-number">Day 21</div>
+            <div class="day-preview">**Summary:**</div>
+            <a href="day-21.html" class="day-link">View Details →</a>
+        </div>
+        <div class="day-card">
+            <div class="day-number">Day 22</div>
+            <div class="day-preview">**Summary:**</div>
+            <a href="day-22.html" class="day-link">View Details →</a>
+        </div>
+        <div class="day-card">
+            <div class="day-number">Day 23</div>
+            <div class="day-preview">**Summary:**</div>
+            <a href="day-23.html" class="day-link">View Details →</a>
+        </div>
+        <div class="day-card">
+            <div class="day-number">Day 24</div>
+            <div class="day-preview">**Summary:**</div>
+            <a href="day-24.html" class="day-link">View Details →</a>
+        </div>
+        <div class="day-card">
+            <div class="day-number">Day 25</div>
+            <div class="day-preview">**Summary:**</div>
+            <a href="day-25.html" class="day-link">View Details →</a>
+        </div>
+        <div class="day-card">
+            <div class="day-number">Day 26</div>
+            <div class="day-preview">**Summary:**</div>
+            <a href="day-26.html" class="day-link">View Details →</a>
+        </div>
+        <div class="day-card">
+            <div class="day-number">Day 27</div>
+            <div class="day-preview">**Summary:**</div>
+            <a href="day-27.html" class="day-link">View Details →</a>
+        </div>
+        <div class="day-card">
+            <div class="day-number">Day 28</div>
+            <div class="day-preview">**Summary:**</div>
+            <a href="day-28.html" class="day-link">View Details →</a>
+        </div>
+        <div class="day-card">
+            <div class="day-number">Day 29</div>
+            <div class="day-preview">**Summary:**</div>
+            <a href="day-29.html" class="day-link">View Details →</a>
+        </div>
+        <div class="day-card">
+            <div class="day-number">Day 30</div>
+            <div class="day-preview">This is a special day as it marks one month of coding GPU kernels daily!</div>
+            <a href="day-30.html" class="day-link">View Details →</a>
+        </div>
+        <div class="day-card">
+            <div class="day-number">Day 31</div>
+            <div class="day-preview">**Summary:**</div>
+            <a href="day-31.html" class="day-link">View Details →</a>
+        </div>
+        <div class="day-card">
+            <div class="day-number">Day 32</div>
+            <div class="day-preview">**Summary:**</div>
+            <a href="day-32.html" class="day-link">View Details →</a>
+        </div>
+        <div class="day-card">
+            <div class="day-number">Day 33</div>
+            <div class="day-preview">**Summary:**</div>
+            <a href="day-33.html" class="day-link">View Details →</a>
+        </div>
+        <div class="day-card">
+            <div class="day-number">Day 34</div>
+            <div class="day-preview">**Summary:**</div>
+            <a href="day-34.html" class="day-link">View Details →</a>
+        </div>
+        <div class="day-card">
+            <div class="day-number">Day 35</div>
+            <div class="day-preview">Implemented a CUDA-based simulation of the Three-Body Problem, a classical physics problem describing the motion of three celestial bodies under mutua...</div>
+            <a href="day-35.html" class="day-link">View Details →</a>
+        </div>
+        <div class="day-card">
+            <div class="day-number">Day 36</div>
+            <div class="day-preview">Implemented a 2D heat diffusion simulation using HIP (Heterogeneous-Computing Interface for Portability). The simulation models how heat spreads acros...</div>
+            <a href="day-36.html" class="day-link">View Details →</a>
+        </div>
+        <div class="day-card">
+            <div class="day-number">Day 37</div>
+            <div class="day-preview">Today, I implemented a basic ray tracing algorithm in CUDA to simulate optical phenomena. The kernel casts rays from a virtual camera and computes int...</div>
+            <a href="day-37.html" class="day-link">View Details →</a>
+        </div>
+        <div class="day-card">
+            <div class="day-number">Day 38</div>
+            <div class="day-preview">Today I implemented the vector addition kernel in triton.</div>
+            <a href="day-38.html" class="day-link">View Details →</a>
+        </div>
+        <div class="day-card">
+            <div class="day-number">Day 39</div>
+            <div class="day-preview">Today I implemented the matrix multiplication kernel in triton.</div>
+            <a href="day-39.html" class="day-link">View Details →</a>
+        </div>
+        <div class="day-card">
+            <div class="day-number">Day 40</div>
+            <div class="day-preview">I implemented the softmax kernel in triton.</div>
+            <a href="day-40.html" class="day-link">View Details →</a>
+        </div>
+        <div class="day-card">
+            <div class="day-number">Day 41</div>
+            <div class="day-preview">I implemented a fused Matrix Multiplication and ReLU kernel in triton.</div>
+            <a href="day-41.html" class="day-link">View Details →</a>
+        </div>
+        <div class="day-card">
+            <div class="day-number">Day 42</div>
+            <div class="day-preview">I implemented a Triton kernel for 1D convolution.</div>
+            <a href="day-42.html" class="day-link">View Details →</a>
+        </div>
+        <div class="day-card">
+            <div class="day-number">Day 43</div>
+            <div class="day-preview">I implemented Full Triton Matrix Multiplication Code with Autotuning.</div>
+            <a href="day-43.html" class="day-link">View Details →</a>
+        </div>
+        <div class="day-card">
+            <div class="day-number">Day 44</div>
+            <div class="day-preview">I completed two challenges on leetgpu.com, both at the hardest level among all challenges.</div>
+            <a href="day-44.html" class="day-link">View Details →</a>
+        </div>
+        <div class="day-card">
+            <div class="day-number">Day 45</div>
+            <div class="day-preview">I implemented a CUDA-based multi-agent flocking simulation (boids) using parallel computing. The simulation processes an array of agents, each represe...</div>
+            <a href="day-45.html" class="day-link">View Details →</a>
+        </div>
+        <div class="day-card">
+            <div class="day-number">Day 46</div>
+            <div class="day-preview">I implemented the Muon optimization algorithm in CUDA, leveraging GPU parallelism for efficient gradient computation and parameter updates. The implem...</div>
+            <a href="day-46.html" class="day-link">View Details →</a>
+        </div>
+        <div class="day-card">
+            <div class="day-number">Day 47</div>
+            <div class="day-preview">I implemented a multi-GPU Single-Parameter Bees Algorithm (SPBA) using HIP, which leverages parallel GPU execution to evaluate candidate solutions con...</div>
+            <a href="day-47.html" class="day-link">View Details →</a>
+        </div>
+        <div class="day-card">
+            <div class="day-number">Day 48</div>
+            <div class="day-preview">I implemented a CUDA-based version of the L-BFGS optimization algorithm, leveraging GPU parallelism to accelerate the two-loop recursion for search di...</div>
+            <a href="day-48.html" class="day-link">View Details →</a>
+        </div>
+        <div class="day-card">
+            <div class="day-number">Day 49</div>
+            <div class="day-preview">I implemented a CUDA-based Conjugate Gradient Method (CGM) solver to efficiently solve linear systems Ax=b by iteratively updating search directions w...</div>
+            <a href="day-49.html" class="day-link">View Details →</a>
+        </div>
+        <div class="day-card">
+            <div class="day-number">Day 50</div>
+            <div class="day-preview">Today I implemented a comprehensive CUDA benchmark to explore the performance, memory efficiency, and accuracy tradeoffs between different floating-po...</div>
+            <a href="day-50.html" class="day-link">View Details →</a>
+        </div>
+        <div class="day-card">
+            <div class="day-number">Day 51</div>
+            <div class="day-preview">Today I implemented a CUDA-based LSTM (Long Short-Term Memory) simulation that processes multiple timesteps on the GPU. The core of the implementation...</div>
+            <a href="day-51.html" class="day-link">View Details →</a>
+        </div>
+        <div class="day-card">
+            <div class="day-number">Day 52</div>
+            <div class="day-preview">𝐖𝐞𝐫𝐞 𝐑𝐍𝐍𝐬 𝐀𝐥𝐥 𝐖𝐞 𝐍𝐞𝐞𝐝𝐞𝐝?</div>
+            <a href="day-52.html" class="day-link">View Details →</a>
+        </div>
+        <div class="day-card">
+            <div class="day-number">Day 53</div>
+            <div class="day-preview">I implemented the AdaHessian optimization algorithm using CUDA. AdaHessian is an adaptive optimizer that incorporates second-order information by appr...</div>
+            <a href="day-53.html" class="day-link">View Details →</a>
+        </div>
+        <div class="day-card">
+            <div class="day-number">Day 54</div>
+            <div class="day-preview">I implemented a bidirectional Long Short-Term Memory (LSTM) network in CUDA, allowing for efficient parallel computation of recurrent neural networks ...</div>
+            <a href="day-54.html" class="day-link">View Details →</a>
+        </div>
+        <div class="day-card">
+            <div class="day-number">Day 55</div>
+            <div class="day-preview">In this experiment, I implemented and benchmarked the DDPM (Denoising Diffusion Probabilistic Model) update step using both CUDA and PyTorch. The goal...</div>
+            <a href="day-55.html" class="day-link">View Details →</a>
+        </div>
+        <div class="day-card">
+            <div class="day-number">Day 56</div>
+            <div class="day-preview">Based on the insightful feedback from my previous DDPM benchmark post, I've updated the code to ensure a fair, one-to-one comparison between the custo...</div>
+            <a href="day-56.html" class="day-link">View Details →</a>
+        </div>
+        <div class="day-card">
+            <div class="day-number">Day 57</div>
+            <div class="day-preview">Implemented the mish activation function in cuda.</div>
+            <a href="day-57.html" class="day-link">View Details →</a>
+        </div>
+        <div class="day-card">
+            <div class="day-number">Day 58</div>
+            <div class="day-preview">I implemented a GPU-accelerated Haar wavelet transform using Triton. The goal was to leverage Triton’s custom kernel capabilities to perform a 2×2 Haa...</div>
+            <a href="day-58.html" class="day-link">View Details →</a>
+        </div>
+        <div class="day-card">
+            <div class="day-number">Day 59</div>
+            <div class="day-preview">Implemented the Layer Normalization function in triton.</div>
+            <a href="day-59.html" class="day-link">View Details →</a>
+        </div>
+        <div class="day-card">
+            <div class="day-number">Day 60</div>
+            <div class="day-preview">Today I implemented a Bitonic Sort algorithm in CUDA! This version is optimized for GPUs by leveraging shared memory to accelerate the sorting process...</div>
+            <a href="day-60.html" class="day-link">View Details →</a>
+        </div>
+        <div class="day-card">
+            <div class="day-number">Day 61</div>
+            <div class="day-preview">I implemented a Simulated Annealing (SA) algorithm that leverages Triton to accelerate the evaluation of the objective function on the GPU.</div>
+            <a href="day-61.html" class="day-link">View Details →</a>
+        </div>
+        <div class="day-card">
+            <div class="day-number">Day 62</div>
+            <div class="day-preview">I implemented Spectral Normalization (SN) using CUDA. Spectral Normalization is a technique used to stabilize the training of neural networks, particu...</div>
+            <a href="day-62.html" class="day-link">View Details →</a>
+        </div>
+        <div class="day-card">
+            <div class="day-number">Day 63</div>
+            <div class="day-preview">I tackled the implementation of a Group Normalization forward pass using CUDA.</div>
+            <a href="day-63.html" class="day-link">View Details →</a>
+        </div>
+        <div class="day-card">
+            <div class="day-number">Day 64</div>
+            <div class="day-preview">Today, I implemented the KL divergence loss (forward and backward passes) in CUDA, inspired by the Liger Triton kernel implementation. This CUDA versi...</div>
+            <a href="day-64.html" class="day-link">View Details →</a>
+        </div>
+        <div class="day-card">
+            <div class="day-number">Day 65</div>
+            <div class="day-preview">I implemented GEGLU kernel in CUDA C++ for direct GPU execution inspired by the Liger Triton kernel implementation combining a gated linear unit with ...</div>
+            <a href="day-65.html" class="day-link">View Details →</a>
+        </div>
+        <div class="day-card">
+            <div class="day-number">Day 66</div>
+            <div class="day-preview">I re-implemented the Liger Triton kernel in native CUDA C++ to perform a SwiGLU operation and its backward pass for gradient computation, where the fo...</div>
+            <a href="day-66.html" class="day-link">View Details →</a>
+        </div>
+        <div class="day-card">
+            <div class="day-number">Day 67</div>
+            <div class="day-preview">Today I implemented a CUDA-accelerated Jacobi solver for the 2D Poisson equation. The goal was to solve ∇²u=f using a finite-difference scheme and ite...</div>
+            <a href="day-67.html" class="day-link">View Details →</a>
+        </div>
+        <div class="day-card">
+            <div class="day-number">Day 68</div>
+            <div class="day-preview">Today I implemented a LoRA (Low-Rank Adaptation) kernel in CUDA C++. This implementation fuses the low-rank update (A×B) with the base weight matrix (...</div>
+            <a href="day-68.html" class="day-link">View Details →</a>
+        </div>
+        <div class="day-card">
+            <div class="day-number">Day 69</div>
+            <div class="day-preview">Today, I implemented a CUDA-accelerated K-Means Clustering for 2D data points as part of the newly added hard challenge on LeetGPU.</div>
+            <a href="day-69.html" class="day-link">View Details →</a>
+        </div>
+        <div class="day-card">
+            <div class="day-number">Day 70</div>
+            <div class="day-preview">Today I implemented the Total Variation Distance (TVD) Loss in CUDA C++ along with its backward pass for gradient computation. The kernel computes the...</div>
+            <a href="day-70.html" class="day-link">View Details →</a>
+        </div>
+        <div class="day-card">
+            <div class="day-number">Day 71</div>
+            <div class="day-preview">In this implementation, I developed a CUDA C++ kernel for the generalized Jensen-Shannon Divergence (JSD) loss, including both forward and backward pa...</div>
+            <a href="day-71.html" class="day-link">View Details →</a>
+        </div>
+        <div class="day-card">
+            <div class="day-number">Day 72</div>
+            <div class="day-preview">I implemented the DyT (Dynamic Tanh) operation in a standalone CUDA C++ file (`dyt.cu`) without using any external frameworks. The implementation incl...</div>
+            <a href="day-72.html" class="day-link">View Details →</a>
+        </div>
+        <div class="day-card">
+            <div class="day-number">Day 73</div>
+            <div class="day-preview">Today, I implemented the Qwen2VL Multimodal Rotary Positional Embedding (M-RoPE) operation in pure CUDA C++. The implementation is self-contained and ...</div>
+            <a href="day-73.html" class="day-link">View Details →</a>
+        </div>
+        <div class="day-card">
+            <div class="day-number">Day 74</div>
+            <div class="day-preview">Today, I implemented a fused Linear transformation and Softmax cross-entropy loss computation in pure CUDA C++. The kernel performs matrix multiplicat...</div>
+            <a href="day-74.html" class="day-link">View Details →</a>
+        </div>
+        <div class="day-card">
+            <div class="day-number">Day 75</div>
+            <div class="day-preview">Today, I implemented the Contrastive Loss function in pure CUDA with both forward and backward passes. The forward kernel computes the loss for each s...</div>
+            <a href="day-75.html" class="day-link">View Details →</a>
+        </div>
+        <div class="day-card">
+            <div class="day-number">Day 76</div>
+            <div class="day-preview">I implemented the Triplet Loss function in pure CUDA C++ with both forward and backward computations. This function is widely used in metric learning ...</div>
+            <a href="day-76.html" class="day-link">View Details →</a>
+        </div>
+        <div class="day-card">
+            <div class="day-number">Day 77</div>
+            <div class="day-preview">I implemented a code that Performs matrix multiplication of two upper triangular matrices.</div>
+            <a href="day-77.html" class="day-link">View Details →</a>
+        </div>
+        <div class="day-card">
+            <div class="day-number">Day 78</div>
+            <div class="day-preview">I implemented a code that Performs the element-wise Huber Loss (specifically, Smooth L1 Loss, which is Huber Loss with δ=1) between two input tensors.</div>
+            <a href="day-78.html" class="day-link">View Details →</a>
+        </div>
+        <div class="day-card">
+            <div class="day-number">Day 79</div>
+            <div class="day-preview">I implemented a code that performs matrix multiplication followed by Swish activation and scaling.</div>
+            <a href="day-79.html" class="day-link">View Details →</a>
+        </div>
+        <div class="day-card">
+            <div class="day-number">Day 80</div>
+            <div class="day-preview">I implemented a code that performs 3D average pooling on an input tensor.</div>
+            <a href="day-80.html" class="day-link">View Details →</a>
+        </div>
+        <div class="day-card">
+            <div class="day-number">Day 81</div>
+            <div class="day-preview">I implemented a code that performs Softplus on an input tensor.</div>
+            <a href="day-81.html" class="day-link">View Details →</a>
+        </div>
+        <div class="day-card">
+            <div class="day-number">Day 82</div>
+            <div class="day-preview">I implemented a code that performs the negative cosine similarity for each pair of vectors in the predictions and targets tensors.</div>
+            <a href="day-82.html" class="day-link">View Details →</a>
+        </div>
+        <div class="day-card">
+            <div class="day-number">Day 83</div>
+            <div class="day-preview">I implemented a code that performs min reduction over a specified dimension of an input tensor.</div>
+            <a href="day-83.html" class="day-link">View Details →</a>
+        </div>
+        <div class="day-card">
+            <div class="day-number">Day 84</div>
+            <div class="day-preview">I implemented a code that performs the cumulative product (also known as prefix product or scan) of an input array.</div>
+            <a href="day-84.html" class="day-link">View Details →</a>
+        </div>
+        <div class="day-card">
+            <div class="day-number">Day 85</div>
+            <div class="day-preview">I implemented a code that performs 4D tensor-matrix multiplication of two tensors.</div>
+            <a href="day-85.html" class="day-link">View Details →</a>
+        </div>
+        <div class="day-card">
+            <div class="day-number">Day 86</div>
+            <div class="day-preview">I implemented a code that performs the Hard Sigmoid activation function on an input matrix:</div>
+            <a href="day-86.html" class="day-link">View Details →</a>
+        </div>
+        <div class="day-card">
+            <div class="day-number">Day 87</div>
+            <div class="day-preview">I implemented a code that performs the multiplication of two symmetric matrices.</div>
+            <a href="day-87.html" class="day-link">View Details →</a>
+        </div>
+        <div class="day-card">
+            <div class="day-number">Day 88</div>
+            <div class="day-preview">I implemented a code that performs the Mean Squared Error.</div>
+            <a href="day-88.html" class="day-link">View Details →</a>
+        </div>
+        <div class="day-card">
+            <div class="day-number">Day 89</div>
+            <div class="day-preview">I implemented a code that performs matrix multiplication of two lower triangular matrices.</div>
+            <a href="day-89.html" class="day-link">View Details →</a>
+        </div>
+        <div class="day-card">
+            <div class="day-number">Day 90</div>
+            <div class="day-preview">I implemented a code that performs thee Frobenius Norm.</div>
+            <a href="day-90.html" class="day-link">View Details →</a>
+        </div>
+        <div class="day-card">
+            <div class="day-number">Day 91</div>
+            <div class="day-preview">I implemented a code that performs the hinge loss.</div>
+            <a href="day-91.html" class="day-link">View Details →</a>
+        </div>
+        <div class="day-card">
+            <div class="day-number">Day 92</div>
+            <div class="day-preview">I implemented a code that performs the 1D Convolution.</div>
+            <a href="day-92.html" class="day-link">View Details →</a>
+        </div>
+        <div class="day-card">
+            <div class="day-number">Day 93</div>
+            <div class="day-preview">I implemented a code that performs the RMS (Root Mean Square) Normalization on a 2D tensor.</div>
+            <a href="day-93.html" class="day-link">View Details →</a>
+        </div>
+        <div class="day-card">
+            <div class="day-number">Day 94</div>
+            <div class="day-preview">I implemented a code that performs the ELU (Exponential Linear Unit) activation function on an input matrix.</div>
+            <a href="day-94.html" class="day-link">View Details →</a>
+        </div>
+        <div class="day-card">
+            <div class="day-number">Day 95</div>
+            <div class="day-preview">I implemented a code that performs the 2D max pooling on an input tensor.</div>
+            <a href="day-95.html" class="day-link">View Details →</a>
+        </div>
+        <div class="day-card">
+            <div class="day-number">Day 96</div>
+            <div class="day-preview">I implemented a code that performs the product reduction over a specified dimension of an input tensor.</div>
+            <a href="day-96.html" class="day-link">View Details →</a>
+        </div>
+        <div class="day-card">
+            <div class="day-number">Day 97</div>
+            <div class="day-preview">I optimized my previous code that applies the ELU (Exponential Linear Unit) activation function to an input matrix.</div>
+            <a href="day-97.html" class="day-link">View Details →</a>
+        </div>
+        <div class="day-card">
+            <div class="day-number">Day 98</div>
+            <div class="day-preview">I optimized my previous code that applies the Leaky ReLU (Leaky Rectified Linear Unit) activation function on an input matrix.</div>
+            <a href="day-98.html" class="day-link">View Details →</a>
+        </div>
+        <div class="day-card">
+            <div class="day-number">Day 99</div>
+            <div class="day-preview">I implemented a code that performs a matrix multiplication followed by bias addition and ReLU activation.</div>
+            <a href="day-99.html" class="day-link">View Details →</a>
+        </div>
+        <div class="day-card">
+            <div class="day-number">Day 100</div>
+            <div class="day-preview">I implemented a code that compute the element-wise Kullback-Leibler Divergence between two probability distributions, predictions and targets.</div>
+            <a href="day-100.html" class="day-link">View Details →</a>
+        </div>
+        </div>
+    </div>
+    
+    <div class="footer">
+        <p>Created as part of the 100 Days GPU Programming Challenge</p>
+        <p>Mentor: <a href="https://github.com/hkproj/" target="_blank">hkproj</a> | 
+           Challenge Partner: <a href="https://github.com/1y33/100Days" target="_blank">1y33</a></p>
+    </div>
+</body>
+</html>

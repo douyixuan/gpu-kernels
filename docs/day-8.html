@@ -1,0 +1,346 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Day 8 - GPU Kernels Learning Journey</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            background: #f5f5f5;
+        }
+        
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 2rem 1rem;
+            text-align: center;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        
+        .header h1 {
+            font-size: 2.5rem;
+            margin-bottom: 0.5rem;
+        }
+        
+        .header .subtitle {
+            font-size: 1.1rem;
+            opacity: 0.9;
+        }
+        
+        .nav {
+            background: white;
+            padding: 1rem;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+        
+        .nav-content {
+            max-width: 1200px;
+            margin: 0 auto;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 1rem;
+        }
+        
+        .nav a {
+            color: #667eea;
+            text-decoration: none;
+            padding: 0.5rem 1rem;
+            border-radius: 5px;
+            transition: all 0.3s;
+        }
+        
+        .nav a:hover {
+            background: #667eea;
+            color: white;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 2rem auto;
+            padding: 0 1rem;
+        }
+        
+        .description {
+            background: white;
+            padding: 2rem;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+            margin-bottom: 2rem;
+        }
+        
+        .description h2 {
+            color: #667eea;
+            margin-bottom: 1rem;
+            border-bottom: 2px solid #667eea;
+            padding-bottom: 0.5rem;
+        }
+        
+        .description pre {
+            background: #f5f5f5;
+            padding: 1rem;
+            border-radius: 5px;
+            overflow-x: auto;
+        }
+        
+        .file-section {
+            background: white;
+            margin-bottom: 2rem;
+            border-radius: 10px;
+            overflow: hidden;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+        }
+        
+        .file-section h3 {
+            background: #667eea;
+            color: white;
+            padding: 1rem;
+            margin: 0;
+        }
+        
+        .file-section pre {
+            margin: 0;
+            border-radius: 0;
+        }
+        
+        .file-section code {
+            display: block;
+            padding: 1.5rem;
+            max-height: 600px;
+            overflow: auto;
+        }
+        
+        .no-files {
+            text-align: center;
+            padding: 3rem;
+            color: #999;
+            font-style: italic;
+        }
+        
+        @media (max-width: 768px) {
+            .header h1 {
+                font-size: 1.8rem;
+            }
+            
+            .nav-content {
+                flex-direction: column;
+                text-align: center;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>Day 8</h1>
+        <div class="subtitle">GPU Kernels Learning Journey</div>
+    </div>
+    
+    <nav class="nav">
+        <div class="nav-content">
+            <a href="index.html">← Back to Index</a>
+            <div>
+                <a href="day-7.html">← Day 7</a>
+                <a href="day-9.html">Day 9 →</a>
+            </div>
+        </div>
+    </nav>
+    
+    <div class="container">
+        <div class="description">
+            <h2>Description</h2>
+            <div class="desc-content">
+### File: `prefixsum_brent_kung_algorithm.cu`  
+**Summary:**  
+Implemented the Brent-Kung algorithm for parallel prefix sum (scan) in CUDA, designing a work-efficient strategy to compute prefix sums across an array.  
+
+**Learned:**  
+- The fundamentals of hierarchical parallel scan algorithms and the Brent-Kung approach for work efficiency.
+- How to divide the scan operation into an **up-sweep (reduce)** phase and a **down-sweep** phase using shared memory for efficient computation.  
+- Optimized thread synchronization and memory usage for large input arrays.  
+
+### Reading:  
+- Read **Chapter 8** of the PMPP book.  
+  - Learned about different parallel patterns for prefix sum computation, focusing on performance, memory access efficiency, and work-efficient algorithms like hierarchical scans.  
+- Read **Chapter 9** of the PMPP book.  
+  - Learned about different parallel patterns for Parallel Histogram Computation, focusing on Atomic Operations,  Interleaved Partitioning, Privatization and Aggregation.  
+
+### Day 9  
+
+### File: `flash_attention_forward.cu`  
+**Summary:**  
+Implemented a forward pass for Flash Attention in CUDA, based on the Flash Attention paper. The code is still a work in progress and might produce incorrect results. A refined and fully functional version will be updated in the coming days.  
+
+**Learned:**  
+- Explored the fundamentals of Flash Attention, including its memory-efficient mechanism for attention computation.  
+- Gained insights into optimizing CUDA kernels for operations like softmax and scaling factors used in attention.  
+- Identified potential challenges in achieving numerical stability and correctness when implementing complex attention mechanisms.  
+
+### Reading:  
+- Read the **Flash Attention paper**.  
+  - Learned about the key concepts of reducing memory overhead in attention computation, streamlining the matrix multiplication process, and ensuring efficient scaling for large models.
+
+
+### Day 10:
+### File: `flash_attention_forward.cu` 
+Optimized and corrected yesterday's forward pass for Flash Attention in CUDA, based on the Flash Attention paper. The code is still a work in progress!
+
+### File: `torch_test.py` 
+Torch code to check the results of flash_attention_forward kernel.
+
+### Blog: `Understanding Flash Attention (Forward) with CUDA`
+A blog on flash attention (forward algorithm) explaining the parts of my code. I'll try to make it more intuitive with drawings as soon as I have time.
+
+### Day 11
+### File: `sparse_MatrixVecMult_Hybrid_ELL_COO.cu`
+**Summary:**  
+Completed the implementation of a highly optimized sparse matrix-vector multiplication (SpMV) algorithm using a hybrid approach that combines ELL (Ellpack) and COO (Coordinate) formats. This implementation focuses on minimizing memory overhead while maximizing computational efficiency across the sparsity of the input matrix.
+
+**Learned:**  
+- Explored the principles and benefits of different sparse matrix representations, namely ELL and COO formats.
+- Implemented hybrid techniques to optimize performance by balancing memory access patterns and ensuring efficient data locality.
+- Benchmarked the performance of the CUDA implementation against PyTorch to evaluate the efficiency and correctness of the optimized SpMV algorithm.
+
+### Reading:  
+- Completed **Chapter 10** of the PMPP book.  
+  - Gained insights into parallel patterns for sparse matrix computations, focusing on the background of sparse data handling, parallel SpMV using CSR formats, and padding and transposition techniques for optimization.  
+  - Learned about utilizing hybrid approaches to manage padding effectively and methods for sorting and partitioning to enhance regularization in sparse data.
+
+### File: `benchmark.py`
+**Summary:**  
+Developed a benchmarking script to evaluate the performance of the custom CUDA SpMV implementation against PyTorch's built-in functions. This benchmark facilitates comparative analysis of execution times and ensures that the implementation meets expected performance standards.
+
+### Blog:  
+- Wrote a blog post titled **"Learning CUDA with a Weak GPU or No GPU at All: Yes, You Can!"**  
+  - Addressed common misconceptions regarding GPU programming and provided practical tips for learners with limited hardware resources. The blog offers insights on optimizing CPU-based implementations and highlights methods to learn CUDA fundamentals without direct access to a powerful GPU.
+
+**Link to Blog:**  
+[Learning CUDA with a Weak GPU or No GPU at All: Yes, You Can!](https://hamdi.bearblog.dev/learning-cuda-with-a-weak-gpu-or-no-gpu-at-all-yes-you-can/)
+            </div>
+        </div>
+        
+        <h2 style="margin-bottom: 1rem; color: #667eea;">Code Files</h2>
+
+    <div class="file-section">
+        <h3>prefixsum_brent_kung_algorithm.cu</h3>
+        <pre><code class="language-cuda">#define LOAD_SIZE 32
+#include &lt;iostream&gt;
+#include &lt;cuda_runtime.h&gt;
+// going to code Brent-Kung algorithm
+__global__ void prefixsum_kernel(float* A,float* C,int N){
+  int threadId=threadIdx.x;
+  int i=2*blockDim.x*blockIdx.x+threadId;
+
+  //load in shared memory
+
+  __shared__ float S_A[LOAD_SIZE];
+  if (i&lt;N){
+    S_A[threadId]=A[i];
+  }
+  if (i+blockDim.x&lt;N){
+    S_A[threadId+blockDim.x]=A[i+blockDim.x];
+  }
+  __syncthreads();
+
+for(int jump=1;jump&lt;=blockDim.x;jump*=2){
+  //I need to sync the threads because I need all their values for the next iteration
+  __syncthreads();
+  int j= jump*2*(threadId+1) -1;
+  if (j&lt;LOAD_SIZE){
+    //I think this will make the threads in the warp inactive, but just a first approximation I'm going to do it like this.
+
+    S_A[j]+=S_A[j-jump];
+  }}
+  __syncthreads();
+
+//Now the reduction part
+//just by pattern recognition the tree is flipped so I assume we just flip the previous algorithm somehow.
+
+
+for(int jump=LOAD_SIZE/4;jump&gt;=1;jump/=2){
+  //I need to sync the threads because I need all their values for the next iteration
+  __syncthreads();
+  int j= jump*2*(threadId+1) -1;
+  if (j&lt;LOAD_SIZE-jump){
+
+     S_A[j+jump]+=S_A[j];
+  }
+  __syncthreads();
+}
+if (i&lt;N) C[i]=S_A[threadId];
+if (i&lt;N-blockDim.x) C[i+blockDim.x]=S_A[threadId+blockDim.x];
+__syncthreads();
+  
+
+}
+
+
+void checkCudaError(const char *message) {
+    cudaError_t error = cudaGetLastError();
+    if (error != cudaSuccess) {
+        printf("CUDA error (%s): %s\n", message, cudaGetErrorString(error));
+        exit(-1);
+    }
+}
+
+
+int main(){
+  int N=10;
+  float A[N],C[N];
+for (int i = 0; i &lt; N; i++) {
+    A[i] = i + 1.0f;
+}
+  float* d_A;
+  float* d_C;
+  cudaMalloc(&amp;d_A,N*sizeof(float));
+  cudaMalloc(&amp;d_C,N*sizeof(float));
+  cudaMemcpy(d_A,A,N*sizeof(float),cudaMemcpyHostToDevice);
+  checkCudaError("Failed to copy input data to device");
+  dim3 dimBlock(32);
+  dim3 dimGrid((N + dimBlock.x - 1) / dimBlock.x);
+  prefixsum_kernel&lt;&lt;&lt;dimGrid, dimBlock&gt;&gt;&gt;(d_A,d_C,N);
+  checkCudaError("Failed to execute the kernel");
+  cudaDeviceSynchronize();
+  cudaMemcpy(C,d_C,N*sizeof(float),cudaMemcpyDeviceToHost);
+checkCudaError("Failed to copy output data to host");
+
+cudaFree(d_A);
+cudaFree(d_C);
+
+
+//printing the results
+printf("A:\n");
+for (int i=0; i&lt;N;i++){
+  printf("%.2f ", A[i]);
+
+}
+printf("C:\n");
+for (int i=0; i&lt;N;i++){
+  printf("%.2f ", C[i]);
+
+}
+}</code></pre>
+    </div>
+
+    </div>
+    
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-c.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-cpp.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-python.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-markdown.min.js"></script>
+</body>
+</html>

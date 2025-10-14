@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Day 100 - GPU Kernels Learning Journey</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            background: #f5f5f5;
+        }
+        
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 2rem 1rem;
+            text-align: center;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        
+        .header h1 {
+            font-size: 2.5rem;
+            margin-bottom: 0.5rem;
+        }
+        
+        .header .subtitle {
+            font-size: 1.1rem;
+            opacity: 0.9;
+        }
+        
+        .nav {
+            background: white;
+            padding: 1rem;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+        
+        .nav-content {
+            max-width: 1200px;
+            margin: 0 auto;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 1rem;
+        }
+        
+        .nav a {
+            color: #667eea;
+            text-decoration: none;
+            padding: 0.5rem 1rem;
+            border-radius: 5px;
+            transition: all 0.3s;
+        }
+        
+        .nav a:hover {
+            background: #667eea;
+            color: white;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 2rem auto;
+            padding: 0 1rem;
+        }
+        
+        .description {
+            background: white;
+            padding: 2rem;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+            margin-bottom: 2rem;
+        }
+        
+        .description h2 {
+            color: #667eea;
+            margin-bottom: 1rem;
+            border-bottom: 2px solid #667eea;
+            padding-bottom: 0.5rem;
+        }
+        
+        .description pre {
+            background: #f5f5f5;
+            padding: 1rem;
+            border-radius: 5px;
+            overflow-x: auto;
+        }
+        
+        .file-section {
+            background: white;
+            margin-bottom: 2rem;
+            border-radius: 10px;
+            overflow: hidden;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+        }
+        
+        .file-section h3 {
+            background: #667eea;
+            color: white;
+            padding: 1rem;
+            margin: 0;
+        }
+        
+        .file-section pre {
+            margin: 0;
+            border-radius: 0;
+        }
+        
+        .file-section code {
+            display: block;
+            padding: 1.5rem;
+            max-height: 600px;
+            overflow: auto;
+        }
+        
+        .no-files {
+            text-align: center;
+            padding: 3rem;
+            color: #999;
+            font-style: italic;
+        }
+        
+        @media (max-width: 768px) {
+            .header h1 {
+                font-size: 1.8rem;
+            }
+            
+            .nav-content {
+                flex-direction: column;
+                text-align: center;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>Day 100</h1>
+        <div class="subtitle">GPU Kernels Learning Journey</div>
+    </div>
+    
+    <nav class="nav">
+        <div class="nav-content">
+            <a href="index.html">← Back to Index</a>
+            <div>
+                <a href="day-99.html">← Day 99</a>
+                
+            </div>
+        </div>
+    </nav>
+    
+    <div class="container">
+        <div class="description">
+            <h2>Description</h2>
+            <div class="desc-content">
+### Files: `Kullback-Leibler.cu`
+I implemented a code that compute the element-wise Kullback-Leibler Divergence between two probability distributions, predictions and targets.
+![LeaderBoard](image.png)
+
+---
+
+### Future challenges:
+- Day 15 - mandatory FA2-forward   (Done)
+- Day 20 - mandatory FA2-bakcwards (Done)
+            </div>
+        </div>
+        
+        <h2 style="margin-bottom: 1rem; color: #667eea;">Code Files</h2>
+
+    <div class="file-section">
+        <h3>Kullback-Leibler.cu</h3>
+        <pre><code class="language-cuda">#include &lt;cuda_runtime.h&gt;
+#include &lt;cstdio&gt;
+
+static constexpr float EPS = 1e-10f;
+
+template &lt;int UNROLL&gt;
+__global__ __launch_bounds__(256, 4)
+void kl_divergence_kernel(const float* __restrict__ predictions,
+                          const float* __restrict__ targets,
+                          float* __restrict__ output,
+                          size_t n)
+{
+    const size_t base = (size_t)blockIdx.x * blockDim.x * UNROLL + threadIdx.x;
+    const size_t stride = (size_t)blockDim.x * gridDim.x * UNROLL;
+
+    size_t idx = base;
+#pragma unroll
+    for (int i = 0; i &lt; UNROLL; ++i, idx += blockDim.x) {
+        if (idx &lt; n) {
+            // we load via read-only cache
+            float t = __ldg(&amp;targets[idx]) + EPS;
+            float p = __ldg(&amp;predictions[idx]) + EPS;
+            // we compute fast-log diff
+            float diff = __logf(t) - __logf(p);
+            // we use fused multiply-add
+            output[idx] = __fmaf_rn(t, diff, 0.0f);
+        }
+    }
+}
+
+
+extern "C" void solution(const float* predictions,
+                         const float* targets,
+                         float* output,
+                         size_t n)
+{
+    const int threads = 256;
+    const int UNROLL = 4;
+    size_t elems_per_block = threads * UNROLL;
+    int blocks = (int)((n + elems_per_block - 1) / elems_per_block);
+
+    // We have to avoid oversubscription!!!
+    blocks = min(blocks, 1024);
+
+    kl_divergence_kernel&lt;UNROLL&gt;&lt;&lt;&lt;blocks, threads&gt;&gt;&gt;(predictions, targets, output, n);
+
+}
+</code></pre>
+    </div>
+
+    </div>
+    
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-c.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-cpp.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-python.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-markdown.min.js"></script>
+</body>
+</html>

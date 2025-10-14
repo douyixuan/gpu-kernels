@@ -1,0 +1,345 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Day 68 - GPU Kernels Learning Journey</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            background: #f5f5f5;
+        }
+        
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 2rem 1rem;
+            text-align: center;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        
+        .header h1 {
+            font-size: 2.5rem;
+            margin-bottom: 0.5rem;
+        }
+        
+        .header .subtitle {
+            font-size: 1.1rem;
+            opacity: 0.9;
+        }
+        
+        .nav {
+            background: white;
+            padding: 1rem;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+        
+        .nav-content {
+            max-width: 1200px;
+            margin: 0 auto;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 1rem;
+        }
+        
+        .nav a {
+            color: #667eea;
+            text-decoration: none;
+            padding: 0.5rem 1rem;
+            border-radius: 5px;
+            transition: all 0.3s;
+        }
+        
+        .nav a:hover {
+            background: #667eea;
+            color: white;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 2rem auto;
+            padding: 0 1rem;
+        }
+        
+        .description {
+            background: white;
+            padding: 2rem;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+            margin-bottom: 2rem;
+        }
+        
+        .description h2 {
+            color: #667eea;
+            margin-bottom: 1rem;
+            border-bottom: 2px solid #667eea;
+            padding-bottom: 0.5rem;
+        }
+        
+        .description pre {
+            background: #f5f5f5;
+            padding: 1rem;
+            border-radius: 5px;
+            overflow-x: auto;
+        }
+        
+        .file-section {
+            background: white;
+            margin-bottom: 2rem;
+            border-radius: 10px;
+            overflow: hidden;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+        }
+        
+        .file-section h3 {
+            background: #667eea;
+            color: white;
+            padding: 1rem;
+            margin: 0;
+        }
+        
+        .file-section pre {
+            margin: 0;
+            border-radius: 0;
+        }
+        
+        .file-section code {
+            display: block;
+            padding: 1.5rem;
+            max-height: 600px;
+            overflow: auto;
+        }
+        
+        .no-files {
+            text-align: center;
+            padding: 3rem;
+            color: #999;
+            font-style: italic;
+        }
+        
+        @media (max-width: 768px) {
+            .header h1 {
+                font-size: 1.8rem;
+            }
+            
+            .nav-content {
+                flex-direction: column;
+                text-align: center;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>Day 68</h1>
+        <div class="subtitle">GPU Kernels Learning Journey</div>
+    </div>
+    
+    <nav class="nav">
+        <div class="nav-content">
+            <a href="index.html">← Back to Index</a>
+            <div>
+                <a href="day-67.html">← Day 67</a>
+                <a href="day-69.html">Day 69 →</a>
+            </div>
+        </div>
+    </nav>
+    
+    <div class="container">
+        <div class="description">
+            <h2>Description</h2>
+            <div class="desc-content">
+### Files: `lora.cu`
+Today I implemented a LoRA (Low-Rank Adaptation) kernel in CUDA C++. This implementation fuses the low-rank update (A×B) with the base weight matrix (W) during the matrix multiplication.
+-GPU kernel execution time: 0.7592 ms
+-CPU execution time: 206.943 ms
+            </div>
+        </div>
+        
+        <h2 style="margin-bottom: 1rem; color: #667eea;">Code Files</h2>
+
+    <div class="file-section">
+        <h3>lora.cu</h3>
+        <pre><code class="language-cuda">#include &lt;cuda_runtime.h&gt;
+#include &lt;iostream&gt;
+#include &lt;cstdlib&gt;
+#include &lt;cmath&gt;
+#include &lt;chrono&gt;
+
+
+#define CUDA_CHECK(error) { \
+    if(error != cudaSuccess){ \
+        std::cerr &lt;&lt; "CUDA Error: " &lt;&lt; cudaGetErrorString(error) \
+                  &lt;&lt; " at " &lt;&lt; __FILE__ &lt;&lt; ":" &lt;&lt; __LINE__ &lt;&lt; std::endl; \
+        exit(EXIT_FAILURE); \
+    } \
+}
+
+__global__ void lora_kernel(const float* x, const float* W, const float* A, const float* B, float* y,
+                            int M, int N, int K, int R) {
+    int row = blockIdx.y * blockDim.y + threadIdx.y; 
+    int col = blockIdx.x * blockDim.x + threadIdx.x; 
+
+    if (row &lt; M &amp;&amp; col &lt; N) {
+        float acc = 0.0f;
+        
+        for (int k = 0; k &lt; K; ++k) {
+            float sum_ab = 0.0f;
+           
+            for (int r = 0; r &lt; R; ++r) {
+                sum_ab += A[k * R + r] * B[r * N + col];
+            }
+           
+            float w_eff = W[k * N + col] + sum_ab;
+            acc += x[row * K + k] * w_eff;
+        }
+        y[row * N + col] = acc;
+    }
+}
+
+
+void cpu_lora(const float* x, const float* W, const float* A, const float* B, float* y,
+              int M, int N, int K, int R) {
+    for (int i = 0; i &lt; M; i++) {
+        for (int j = 0; j &lt; N; j++) {
+            float acc = 0.0f;
+            for (int k = 0; k &lt; K; k++) {
+                float sum_ab = 0.0f;
+                for (int r = 0; r &lt; R; r++) {
+                    sum_ab += A[k * R + r] * B[r * N + j];
+                }
+                float w_eff = W[k * N + j] + sum_ab;
+                acc += x[i * K + k] * w_eff;
+            }
+            y[i * N + j] = acc;
+        }
+    }
+}
+
+
+void print_matrix(const float* mat, int M, int N, int max_rows = 5, int max_cols = 5) {
+    for (int i = 0; i &lt; std::min(M, max_rows); ++i) {
+        for (int j = 0; j &lt; std::min(N, max_cols); ++j) {
+            std::cout &lt;&lt; mat[i * N + j] &lt;&lt; "\t";
+        }
+        std::cout &lt;&lt; std::endl;
+    }
+}
+
+int main() {
+    
+    int M = 128, K = 256, N = 64, R = 32;
+    
+    size_t size_x = M * K * sizeof(float);
+    size_t size_W = K * N * sizeof(float);
+    size_t size_A = K * R * sizeof(float);
+    size_t size_B = R * N * sizeof(float);
+    size_t size_y = M * N * sizeof(float);
+
+
+    float *h_x = (float*)malloc(size_x);
+    float *h_W = (float*)malloc(size_W);
+    float *h_A = (float*)malloc(size_A);
+    float *h_B = (float*)malloc(size_B);
+    float *h_y = (float*)malloc(size_y);
+    float *h_y_cpu = (float*)malloc(size_y);
+
+
+    for (int i = 0; i &lt; M * K; i++) h_x[i] = static_cast&lt;float&gt;(rand()) / RAND_MAX;
+    for (int i = 0; i &lt; K * N; i++) h_W[i] = static_cast&lt;float&gt;(rand()) / RAND_MAX;
+    for (int i = 0; i &lt; K * R; i++) h_A[i] = static_cast&lt;float&gt;(rand()) / RAND_MAX;
+    for (int i = 0; i &lt; R * N; i++) h_B[i] = static_cast&lt;float&gt;(rand()) / RAND_MAX;
+
+  
+    float *d_x, *d_W, *d_A, *d_B, *d_y;
+    CUDA_CHECK(cudaMalloc((void**)&amp;d_x, size_x));
+    CUDA_CHECK(cudaMalloc((void**)&amp;d_W, size_W));
+    CUDA_CHECK(cudaMalloc((void**)&amp;d_A, size_A));
+    CUDA_CHECK(cudaMalloc((void**)&amp;d_B, size_B));
+    CUDA_CHECK(cudaMalloc((void**)&amp;d_y, size_y));
+
+    CUDA_CHECK(cudaMemcpy(d_x, h_x, size_x, cudaMemcpyHostToDevice));
+    CUDA_CHECK(cudaMemcpy(d_W, h_W, size_W, cudaMemcpyHostToDevice));
+    CUDA_CHECK(cudaMemcpy(d_A, h_A, size_A, cudaMemcpyHostToDevice));
+    CUDA_CHECK(cudaMemcpy(d_B, h_B, size_B, cudaMemcpyHostToDevice));
+
+    cudaEvent_t start, stop;
+    CUDA_CHECK(cudaEventCreate(&amp;start));
+    CUDA_CHECK(cudaEventCreate(&amp;stop));
+
+    dim3 threads(16, 16);
+    dim3 blocks((N + threads.x - 1) / threads.x, (M + threads.y - 1) / threads.y);
+
+ 
+    CUDA_CHECK(cudaEventRecord(start, 0));
+
+
+    lora_kernel&lt;&lt;&lt;blocks, threads&gt;&gt;&gt;(d_x, d_W, d_A, d_B, d_y, M, N, K, R);
+    CUDA_CHECK(cudaEventRecord(stop, 0));
+    CUDA_CHECK(cudaEventSynchronize(stop));
+
+   
+    float gpuTime = 0.0f;
+    CUDA_CHECK(cudaEventElapsedTime(&amp;gpuTime, start, stop));
+
+   
+    CUDA_CHECK(cudaMemcpy(h_y, d_y, size_y, cudaMemcpyDeviceToHost));
+
+    
+    auto cpu_start = std::chrono::high_resolution_clock::now();
+    cpu_lora(h_x, h_W, h_A, h_B, h_y_cpu, M, N, K, R);
+    auto cpu_end = std::chrono::high_resolution_clock::now();
+    std::chrono::duration&lt;double, std::milli&gt; cpuTime = cpu_end - cpu_start;
+
+   
+    float max_diff = 0.0f;
+    for (int i = 0; i &lt; M * N; i++){
+        float diff = fabs(h_y_cpu[i] - h_y[i]);
+        if (diff &gt; max_diff)
+            max_diff = diff;
+    }
+    std::cout &lt;&lt; "Max difference between CPU and GPU results: " &lt;&lt; max_diff &lt;&lt; std::endl;
+    std::cout &lt;&lt; "GPU kernel execution time: " &lt;&lt; gpuTime &lt;&lt; " ms" &lt;&lt; std::endl;
+    std::cout &lt;&lt; "CPU execution time: " &lt;&lt; cpuTime.count() &lt;&lt; " ms" &lt;&lt; std::endl;
+
+
+    std::cout &lt;&lt; "\nSample output from GPU result (first 5 rows, 5 cols):\n";
+    print_matrix(h_y, M, N, 5, 5);
+
+    std::cout &lt;&lt; "\nSample output from CPU result (first 5 rows, 5 cols):\n";
+    print_matrix(h_y_cpu, M, N, 5, 5);
+
+
+    CUDA_CHECK(cudaEventDestroy(start));
+    CUDA_CHECK(cudaEventDestroy(stop));
+    free(h_x); free(h_W); free(h_A); free(h_B); free(h_y); free(h_y_cpu);
+    cudaFree(d_x); cudaFree(d_W); cudaFree(d_A); cudaFree(d_B); cudaFree(d_y);
+
+    return 0;
+}
+</code></pre>
+    </div>
+
+    </div>
+    
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-c.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-cpp.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-python.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-markdown.min.js"></script>
+</body>
+</html>

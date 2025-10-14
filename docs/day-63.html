@@ -1,0 +1,338 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Day 63 - GPU Kernels Learning Journey</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            background: #f5f5f5;
+        }
+        
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 2rem 1rem;
+            text-align: center;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        
+        .header h1 {
+            font-size: 2.5rem;
+            margin-bottom: 0.5rem;
+        }
+        
+        .header .subtitle {
+            font-size: 1.1rem;
+            opacity: 0.9;
+        }
+        
+        .nav {
+            background: white;
+            padding: 1rem;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+        
+        .nav-content {
+            max-width: 1200px;
+            margin: 0 auto;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 1rem;
+        }
+        
+        .nav a {
+            color: #667eea;
+            text-decoration: none;
+            padding: 0.5rem 1rem;
+            border-radius: 5px;
+            transition: all 0.3s;
+        }
+        
+        .nav a:hover {
+            background: #667eea;
+            color: white;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 2rem auto;
+            padding: 0 1rem;
+        }
+        
+        .description {
+            background: white;
+            padding: 2rem;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+            margin-bottom: 2rem;
+        }
+        
+        .description h2 {
+            color: #667eea;
+            margin-bottom: 1rem;
+            border-bottom: 2px solid #667eea;
+            padding-bottom: 0.5rem;
+        }
+        
+        .description pre {
+            background: #f5f5f5;
+            padding: 1rem;
+            border-radius: 5px;
+            overflow-x: auto;
+        }
+        
+        .file-section {
+            background: white;
+            margin-bottom: 2rem;
+            border-radius: 10px;
+            overflow: hidden;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+        }
+        
+        .file-section h3 {
+            background: #667eea;
+            color: white;
+            padding: 1rem;
+            margin: 0;
+        }
+        
+        .file-section pre {
+            margin: 0;
+            border-radius: 0;
+        }
+        
+        .file-section code {
+            display: block;
+            padding: 1.5rem;
+            max-height: 600px;
+            overflow: auto;
+        }
+        
+        .no-files {
+            text-align: center;
+            padding: 3rem;
+            color: #999;
+            font-style: italic;
+        }
+        
+        @media (max-width: 768px) {
+            .header h1 {
+                font-size: 1.8rem;
+            }
+            
+            .nav-content {
+                flex-direction: column;
+                text-align: center;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>Day 63</h1>
+        <div class="subtitle">GPU Kernels Learning Journey</div>
+    </div>
+    
+    <nav class="nav">
+        <div class="nav-content">
+            <a href="index.html">← Back to Index</a>
+            <div>
+                <a href="day-62.html">← Day 62</a>
+                <a href="day-64.html">Day 64 →</a>
+            </div>
+        </div>
+    </nav>
+    
+    <div class="container">
+        <div class="description">
+            <h2>Description</h2>
+            <div class="desc-content">
+### Files: `group_norm.cu`
+I tackled the implementation of a Group Normalization forward pass using CUDA.
+            </div>
+        </div>
+        
+        <h2 style="margin-bottom: 1rem; color: #667eea;">Code Files</h2>
+
+    <div class="file-section">
+        <h3>group_norm.cu</h3>
+        <pre><code class="language-cuda">#include &lt;iostream&gt;
+#include &lt;cmath&gt;
+#include &lt;cuda_runtime.h&gt;
+
+#define CUDA_CHECK(err) \
+    if(err != cudaSuccess) {\
+        std::cerr &lt;&lt; "CUDA error: " &lt;&lt; cudaGetErrorString(err) \
+                  &lt;&lt; " at " &lt;&lt; __FILE__ &lt;&lt; ":" &lt;&lt; __LINE__ &lt;&lt; std::endl;\
+        exit(EXIT_FAILURE);\
+    }
+
+// Kernel that performs group normalization forward pass using parallel reduction.
+__global__ void groupNormForward(const float *x, float *y, 
+                                 const float *gamma, const float *beta,
+                                 int N, int C, int H, int W, int G, float eps) {
+    // Each block handles one sample (n) and one group (g)
+    int n = blockIdx.x;
+    int g = blockIdx.y;
+    
+    int group_channels = C / G;
+    int spatial_size = H * W;
+    int group_size = group_channels * spatial_size;
+    int start_c = g * group_channels;
+    
+    // Use threadIdx.x to index within the group.
+    int tid = threadIdx.x;
+    
+    // Each thread may process multiple elements.
+    float local_sum = 0.0f;
+    float local_sum_sq = 0.0f;
+    for (int i = tid; i &lt; group_size; i += blockDim.x) {
+        int c_offset = i / spatial_size;   // index within the group channels
+        int s = i % spatial_size;            // spatial index
+        int channel = start_c + c_offset;
+        int idx = n * C * spatial_size + channel * spatial_size + s;
+        float val = x[idx];
+        local_sum += val;
+        local_sum_sq += val * val;
+    }
+    
+    // Allocate shared memory for reduction (two arrays in one block).
+    extern __shared__ float shared[];
+    float* s_sum = shared;              // size: blockDim.x
+    float* s_sum_sq = &amp;shared[blockDim.x]; // size: blockDim.x
+
+    s_sum[tid] = local_sum;
+    s_sum_sq[tid] = local_sum_sq;
+    __syncthreads();
+    
+    // Parallel reduction for sum and sum of squares.
+    for (int stride = blockDim.x / 2; stride &gt; 0; stride /= 2) {
+        if (tid &lt; stride) {
+            s_sum[tid] += s_sum[tid + stride];
+            s_sum_sq[tid] += s_sum_sq[tid + stride];
+        }
+        __syncthreads();
+    }
+    
+    // Compute mean and variance (only thread 0 does it, then broadcast).
+    float mean = s_sum[0] / group_size;
+    float var = s_sum_sq[0] / group_size - mean * mean;
+    float inv_std = rsqrtf(var + eps);
+    __syncthreads(); // ensure all threads see the computed mean and var
+
+    // Normalize each element in the group.
+    for (int i = tid; i &lt; group_size; i += blockDim.x) {
+        int c_offset = i / spatial_size;
+        int s = i % spatial_size;
+        int channel = start_c + c_offset;
+        int idx = n * C * spatial_size + channel * spatial_size + s;
+        float val = x[idx];
+        float norm = (val - mean) * inv_std;
+        y[idx] = gamma[channel] * norm + beta[channel];
+    }
+}
+
+int main() {
+    // Tensor dimensions.
+    int N = 1;   // Batch size.
+    int C = 4;   // Number of channels.
+    int H = 2;   // Height.
+    int W = 2;   // Width.
+    int G = 2;   // Number of groups (C must be divisible by G).
+    float eps = 1e-5;
+    int tensor_size = N * C * H * W;
+    
+    // Host memory allocation.
+    float h_x[tensor_size];
+    float h_y[tensor_size];
+    float h_gamma[C];
+    float h_beta[C];
+    
+    // Initialize input tensor and parameters.
+    for (int i = 0; i &lt; tensor_size; i++) {
+        h_x[i] = static_cast&lt;float&gt;(i);
+    }
+    for (int i = 0; i &lt; C; i++) {
+        h_gamma[i] = 1.0f;  // scaling factors.
+        h_beta[i] = 0.0f;   // shifting factors.
+    }
+    
+    // Device memory allocation.
+    float *d_x, *d_y, *d_gamma, *d_beta;
+    CUDA_CHECK(cudaMalloc(&amp;d_x, tensor_size * sizeof(float)));
+    CUDA_CHECK(cudaMalloc(&amp;d_y, tensor_size * sizeof(float)));
+    CUDA_CHECK(cudaMalloc(&amp;d_gamma, C * sizeof(float)));
+    CUDA_CHECK(cudaMalloc(&amp;d_beta, C * sizeof(float)));
+    
+    // Copy data to device.
+    CUDA_CHECK(cudaMemcpy(d_x, h_x, tensor_size * sizeof(float), cudaMemcpyHostToDevice));
+    CUDA_CHECK(cudaMemcpy(d_gamma, h_gamma, C * sizeof(float), cudaMemcpyHostToDevice));
+    CUDA_CHECK(cudaMemcpy(d_beta, h_beta, C * sizeof(float), cudaMemcpyHostToDevice));
+    
+    // Set grid and block dimensions.
+    int group_channels = C / G;
+    int spatial_size = H * W;
+    int group_size = group_channels * spatial_size;
+    int threadsPerBlock = (group_size &lt; 128) ? group_size : 128;
+    // Shared memory size: two arrays of threadsPerBlock floats.
+    size_t sharedMemSize = threadsPerBlock * 2 * sizeof(float);
+    dim3 grid(N, G);
+    
+    // Launch the kernel.
+    groupNormForward&lt;&lt;&lt;grid, threadsPerBlock, sharedMemSize&gt;&gt;&gt;(d_x, d_y, d_gamma, d_beta,
+                                                                N, C, H, W, G, eps);
+    CUDA_CHECK(cudaDeviceSynchronize());
+    
+    // Copy results back to host.
+    CUDA_CHECK(cudaMemcpy(h_y, d_y, tensor_size * sizeof(float), cudaMemcpyDeviceToHost));
+    
+    // Print the normalized output.
+    std::cout &lt;&lt; "Group Norm Forward Output:" &lt;&lt; std::endl;
+    for (int n = 0; n &lt; N; n++) {
+        for (int c = 0; c &lt; C; c++) {
+            for (int h = 0; h &lt; H; h++) {
+                for (int w = 0; w &lt; W; w++) {
+                    int idx = n * C * H * W + c * H * W + h * W + w;
+                    std::cout &lt;&lt; h_y[idx] &lt;&lt; " ";
+                }
+                std::cout &lt;&lt; std::endl;
+            }
+            std::cout &lt;&lt; std::endl;
+        }
+    }
+    
+    // Free device memory.
+    CUDA_CHECK(cudaFree(d_x));
+    CUDA_CHECK(cudaFree(d_y));
+    CUDA_CHECK(cudaFree(d_gamma));
+    CUDA_CHECK(cudaFree(d_beta));
+    
+    return 0;
+}</code></pre>
+    </div>
+
+    </div>
+    
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-c.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-cpp.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-python.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-markdown.min.js"></script>
+</body>
+</html>

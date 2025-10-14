@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Day 45 - GPU Kernels Learning Journey</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            background: #f5f5f5;
+        }
+        
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 2rem 1rem;
+            text-align: center;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        
+        .header h1 {
+            font-size: 2.5rem;
+            margin-bottom: 0.5rem;
+        }
+        
+        .header .subtitle {
+            font-size: 1.1rem;
+            opacity: 0.9;
+        }
+        
+        .nav {
+            background: white;
+            padding: 1rem;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+        
+        .nav-content {
+            max-width: 1200px;
+            margin: 0 auto;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 1rem;
+        }
+        
+        .nav a {
+            color: #667eea;
+            text-decoration: none;
+            padding: 0.5rem 1rem;
+            border-radius: 5px;
+            transition: all 0.3s;
+        }
+        
+        .nav a:hover {
+            background: #667eea;
+            color: white;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 2rem auto;
+            padding: 0 1rem;
+        }
+        
+        .description {
+            background: white;
+            padding: 2rem;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+            margin-bottom: 2rem;
+        }
+        
+        .description h2 {
+            color: #667eea;
+            margin-bottom: 1rem;
+            border-bottom: 2px solid #667eea;
+            padding-bottom: 0.5rem;
+        }
+        
+        .description pre {
+            background: #f5f5f5;
+            padding: 1rem;
+            border-radius: 5px;
+            overflow-x: auto;
+        }
+        
+        .file-section {
+            background: white;
+            margin-bottom: 2rem;
+            border-radius: 10px;
+            overflow: hidden;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+        }
+        
+        .file-section h3 {
+            background: #667eea;
+            color: white;
+            padding: 1rem;
+            margin: 0;
+        }
+        
+        .file-section pre {
+            margin: 0;
+            border-radius: 0;
+        }
+        
+        .file-section code {
+            display: block;
+            padding: 1.5rem;
+            max-height: 600px;
+            overflow: auto;
+        }
+        
+        .no-files {
+            text-align: center;
+            padding: 3rem;
+            color: #999;
+            font-style: italic;
+        }
+        
+        @media (max-width: 768px) {
+            .header h1 {
+                font-size: 1.8rem;
+            }
+            
+            .nav-content {
+                flex-direction: column;
+                text-align: center;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>Day 45</h1>
+        <div class="subtitle">GPU Kernels Learning Journey</div>
+    </div>
+    
+    <nav class="nav">
+        <div class="nav-content">
+            <a href="index.html">← Back to Index</a>
+            <div>
+                <a href="day-44.html">← Day 44</a>
+                <a href="day-46.html">Day 46 →</a>
+            </div>
+        </div>
+    </nav>
+    
+    <div class="container">
+        <div class="description">
+            <h2>Description</h2>
+            <div class="desc-content">
+### Files:`leetgpu_boids.cu` 
+I implemented a CUDA-based multi-agent flocking simulation (boids) using parallel computing. The simulation processes an array of agents, each represented by four consecutive 32-bit floating point values: two for position (x, y) and two for velocity (vx, vy). The program efficiently identifies neighboring agents within a given radius, computes the average velocity of neighbors, and updates each agent’s velocity and position accordingly. By leveraging CUDA's parallel execution, the simulation achieves high-performance real-time flocking dynamics.
+            </div>
+        </div>
+        
+        <h2 style="margin-bottom: 1rem; color: #667eea;">Code Files</h2>
+
+    <div class="file-section">
+        <h3>leetgpu_boids.cu</h3>
+        <pre><code class="language-cuda">#include "solve.h"
+#include &lt;cuda_runtime.h&gt;
+
+// Each agent has [x, y, vx, vy] in agents array, for a total of 4*N floats.
+// This kernel performs one flocking step for each agent.
+__global__
+void flockKernel(const float* agents, float* agents_next, int N)
+{
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i &gt;= N) return;
+    
+    // Current agent's data starts at index base = 4*i
+    int base = 4 * i;
+    float x  = agents[base + 0];
+    float y  = agents[base + 1];
+    float vx = agents[base + 2];
+    float vy = agents[base + 3];
+    
+    // Flocking parameters
+    const float r      = 5.0f;       // neighbor radius
+    const float r_sq   = r * r;      // compare squared distances
+    const float alpha  = 0.05f;      // alignment factor
+
+    // Accumulate neighbor velocities
+    float sum_vx = 0.0f;
+    float sum_vy = 0.0f;
+    int neighborCount = 0;
+    
+    // Find neighbors within radius r
+    for (int j = 0; j &lt; N; j++)
+    {
+        if (j == i) continue;  // skip self
+
+        int jbase = 4 * j;
+        float xj  = agents[jbase + 0];
+        float yj  = agents[jbase + 1];
+        
+        float dx = xj - x;
+        float dy = yj - y;
+        float dist_sq = dx*dx + dy*dy;
+        
+        // "within radius" means dist &lt; r, so dist_sq &lt; r_sq
+        if (dist_sq &lt; r_sq) {
+            // accumulate neighbor velocities
+            sum_vx += agents[jbase + 2];
+            sum_vy += agents[jbase + 3];
+            neighborCount++;
+        }
+    }
+    
+    // Compute new velocity
+    float new_vx = vx;
+    float new_vy = vy;
+    if (neighborCount &gt; 0)
+    {
+        float avg_vx = sum_vx / neighborCount;
+        float avg_vy = sum_vy / neighborCount;
+        // v_new = v + alpha*(avg_v - v)
+        new_vx = vx + alpha * (avg_vx - vx);
+        new_vy = vy + alpha * (avg_vy - vy);
+    }
+    
+    // Update position
+    float new_x = x + new_vx;
+    float new_y = y + new_vy;
+    
+    // Write results
+    agents_next[base + 0] = new_x;
+    agents_next[base + 1] = new_y;
+    agents_next[base + 2] = new_vx;
+    agents_next[base + 3] = new_vy;
+}
+
+// The solve function with default C++ linkage
+void solve(const float* agents, float* agents_next, int N)
+{
+    // Device pointers
+    float *d_agents     = nullptr;
+    float *d_agentsNext = nullptr;
+    
+    size_t size = 4 * N * sizeof(float);
+    
+    // Allocate device memory
+    cudaMalloc((void**)&amp;d_agents,     size);
+    cudaMalloc((void**)&amp;d_agentsNext, size);
+    
+    // Copy agents from host to device
+    cudaMemcpy(d_agents, agents, size, cudaMemcpyHostToDevice);
+    
+    // Configure kernel
+    int blockSize = 256;
+    int gridSize  = (N + blockSize - 1) / blockSize;
+    
+    // Launch kernel
+    flockKernel&lt;&lt;&lt;gridSize, blockSize&gt;&gt;&gt;(d_agents, d_agentsNext, N);
+    cudaDeviceSynchronize();
+    
+    // Copy results back to host
+    cudaMemcpy(agents_next, d_agentsNext, size, cudaMemcpyDeviceToHost);
+    
+    // Clean up
+    cudaFree(d_agents);
+    cudaFree(d_agentsNext);
+}
+</code></pre>
+    </div>
+
+    </div>
+    
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-c.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-cpp.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-python.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-markdown.min.js"></script>
+</body>
+</html>

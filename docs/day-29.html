@@ -1,0 +1,429 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Day 29 - GPU Kernels Learning Journey</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            background: #f5f5f5;
+        }
+        
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 2rem 1rem;
+            text-align: center;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        
+        .header h1 {
+            font-size: 2.5rem;
+            margin-bottom: 0.5rem;
+        }
+        
+        .header .subtitle {
+            font-size: 1.1rem;
+            opacity: 0.9;
+        }
+        
+        .nav {
+            background: white;
+            padding: 1rem;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+        
+        .nav-content {
+            max-width: 1200px;
+            margin: 0 auto;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 1rem;
+        }
+        
+        .nav a {
+            color: #667eea;
+            text-decoration: none;
+            padding: 0.5rem 1rem;
+            border-radius: 5px;
+            transition: all 0.3s;
+        }
+        
+        .nav a:hover {
+            background: #667eea;
+            color: white;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 2rem auto;
+            padding: 0 1rem;
+        }
+        
+        .description {
+            background: white;
+            padding: 2rem;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+            margin-bottom: 2rem;
+        }
+        
+        .description h2 {
+            color: #667eea;
+            margin-bottom: 1rem;
+            border-bottom: 2px solid #667eea;
+            padding-bottom: 0.5rem;
+        }
+        
+        .description pre {
+            background: #f5f5f5;
+            padding: 1rem;
+            border-radius: 5px;
+            overflow-x: auto;
+        }
+        
+        .file-section {
+            background: white;
+            margin-bottom: 2rem;
+            border-radius: 10px;
+            overflow: hidden;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+        }
+        
+        .file-section h3 {
+            background: #667eea;
+            color: white;
+            padding: 1rem;
+            margin: 0;
+        }
+        
+        .file-section pre {
+            margin: 0;
+            border-radius: 0;
+        }
+        
+        .file-section code {
+            display: block;
+            padding: 1.5rem;
+            max-height: 600px;
+            overflow: auto;
+        }
+        
+        .no-files {
+            text-align: center;
+            padding: 3rem;
+            color: #999;
+            font-style: italic;
+        }
+        
+        @media (max-width: 768px) {
+            .header h1 {
+                font-size: 1.8rem;
+            }
+            
+            .nav-content {
+                flex-direction: column;
+                text-align: center;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>Day 29</h1>
+        <div class="subtitle">GPU Kernels Learning Journey</div>
+    </div>
+    
+    <nav class="nav">
+        <div class="nav-content">
+            <a href="index.html">← Back to Index</a>
+            <div>
+                <a href="day-28.html">← Day 28</a>
+                <a href="day-30.html">Day 30 →</a>
+            </div>
+        </div>
+    </nav>
+    
+    <div class="container">
+        <div class="description">
+            <h2>Description</h2>
+            <div class="desc-content">
+### File: `Cuda_graphs.cu`
+
+**Summary:** 
+
+This CUDA program performs a series of matrix operations using GPU acceleration, demonstrating the use of CUDA kernels for matrix addition, scaling, squaring, and offsetting while measuring performance with and without CUDA Graphs. It includes element-wise matrix addition, scalar multiplication, squaring of elements, and offset addition. The program also compares execution time using traditional CUDA execution versus CUDA Graphs, leveraging CUDA streams and events for optimized performance measurement. Finally, it verifies correctness by comparing GPU-computed results with CPU-verified results.
+
+For more details check :[Cuda_graphs](./day%2029/README.md)
+-
+            </div>
+        </div>
+        
+        <h2 style="margin-bottom: 1rem; color: #667eea;">Code Files</h2>
+
+    <div class="file-section">
+        <h3>Cuda_graphs.cu</h3>
+        <pre><code class="language-cuda">#include &lt;cuda_runtime.h&gt;
+#include &lt;stdio.h&gt;
+
+#define CHECK_CUDA(call) do {                                          \
+    cudaError_t err = call;                                           \
+    if (err != cudaSuccess) {                                         \
+        printf("CUDA Error at %s %d: %s\n", __FILE__, __LINE__,      \
+               cudaGetErrorString(err));                              \
+        exit(EXIT_FAILURE);                                           \
+    }                                                                 \
+} while(0)
+
+const int N = 100000;  // Smaller data size
+const int NUM_ITERATIONS = 10000;  // More iterations
+const int BLOCK_SIZE = 256;
+
+__global__ void matrixAdd(float* A, float* B, float* C, int n) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx &lt; n) {
+        C[idx] = A[idx] + B[idx];
+    }
+}
+
+__global__ void matrixScale(float* A, float scalar, int n) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx &lt; n) {
+        A[idx] = A[idx] * scalar;
+    }
+}
+
+__global__ void matrixSquare(float* A, int n) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx &lt; n) {
+        A[idx] = A[idx] * A[idx];
+    }
+}
+
+__global__ void matrixOffset(float* A, float offset, int n) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx &lt; n) {
+        A[idx] = A[idx] + offset;
+    }
+}
+
+void printTiming(const char* title, float ms) {
+    printf("%s: %.3f ms\n", title, ms);
+}
+
+void verifyResults(float* h_A, float* h_B, float* h_C, float* h_verify, int n) {
+    // Compute expected results on CPU
+    for (int i = 0; i &lt; n; i++) {
+        float temp = h_A[i] + h_B[i];  // Add
+        temp = temp * 2.0f;            // Scale
+        temp = temp * temp;            // Square
+        h_verify[i] = temp + 1.0f;     // Offset
+    }
+
+    // Compare with GPU results
+    bool match = true;
+    for (int i = 0; i &lt; n; i++) {
+        if (fabs(h_verify[i] - h_C[i]) &gt; 1e-5) {
+            match = false;
+            printf("Mismatch at index %d: Expected %f, Got %f\n", 
+                   i, h_verify[i], h_C[i]);
+            break;
+        }
+    }
+    if (match) {
+        printf("Verification successful! All values match expected result.\n");
+    }
+}
+
+int main() {
+    float *h_A, *h_B, *h_C, *h_verify;
+    float *d_A, *d_B, *d_C;
+    size_t size = N * sizeof(float);
+
+    // Allocate host memory
+    h_A = (float*)malloc(size);
+    h_B = (float*)malloc(size);
+    h_C = (float*)malloc(size);
+    h_verify = (float*)malloc(size);
+
+    // Initialize host arrays
+    for (int i = 0; i &lt; N; i++) {
+        h_A[i] = rand() / (float)RAND_MAX;
+        h_B[i] = rand() / (float)RAND_MAX;
+    }
+
+    // Allocate device memory
+    CHECK_CUDA(cudaMalloc(&amp;d_A, size));
+    CHECK_CUDA(cudaMalloc(&amp;d_B, size));
+    CHECK_CUDA(cudaMalloc(&amp;d_C, size));
+
+    // Copy data to device
+    CHECK_CUDA(cudaMemcpy(d_A, h_A, size, cudaMemcpyHostToDevice));
+    CHECK_CUDA(cudaMemcpy(d_B, h_B, size, cudaMemcpyHostToDevice));
+
+    // Create CUDA stream and events
+    cudaStream_t stream;
+    cudaEvent_t start, stop;
+    CHECK_CUDA(cudaStreamCreate(&amp;stream));
+    CHECK_CUDA(cudaEventCreate(&amp;start));
+    CHECK_CUDA(cudaEventCreate(&amp;stop));
+
+    // Calculate grid dimensions
+    int blocksPerGrid = (N + BLOCK_SIZE - 1) / BLOCK_SIZE;
+
+    // Warmup
+    for (int i = 0; i &lt; 10; i++) {
+        matrixAdd&lt;&lt;&lt;blocksPerGrid, BLOCK_SIZE, 0, stream&gt;&gt;&gt;(d_A, d_B, d_C, N);
+        matrixScale&lt;&lt;&lt;blocksPerGrid, BLOCK_SIZE, 0, stream&gt;&gt;&gt;(d_C, 2.0f, N);
+        matrixSquare&lt;&lt;&lt;blocksPerGrid, BLOCK_SIZE, 0, stream&gt;&gt;&gt;(d_C, N);
+        matrixOffset&lt;&lt;&lt;blocksPerGrid, BLOCK_SIZE, 0, stream&gt;&gt;&gt;(d_C, 1.0f, N);
+    }
+    cudaStreamSynchronize(stream);
+
+    // Traditional execution
+    cudaEventRecord(start, stream);
+    for (int i = 0; i &lt; NUM_ITERATIONS; i++) {
+        matrixAdd&lt;&lt;&lt;blocksPerGrid, BLOCK_SIZE, 0, stream&gt;&gt;&gt;(d_A, d_B, d_C, N);
+        matrixScale&lt;&lt;&lt;blocksPerGrid, BLOCK_SIZE, 0, stream&gt;&gt;&gt;(d_C, 2.0f, N);
+        matrixSquare&lt;&lt;&lt;blocksPerGrid, BLOCK_SIZE, 0, stream&gt;&gt;&gt;(d_C, N);
+        matrixOffset&lt;&lt;&lt;blocksPerGrid, BLOCK_SIZE, 0, stream&gt;&gt;&gt;(d_C, 1.0f, N);
+    }
+    cudaEventRecord(stop, stream);
+    cudaEventSynchronize(stop);
+    float milliseconds = 0;
+    cudaEventElapsedTime(&amp;milliseconds, start, stop);
+    printTiming("Without CUDA Graphs", milliseconds);
+
+    // Copy results for verification
+    CHECK_CUDA(cudaMemcpy(h_C, d_C, size, cudaMemcpyDeviceToHost));
+
+    // Graph capture
+    cudaGraph_t graph;
+    cudaGraphExec_t graphExec;
+
+    CHECK_CUDA(cudaStreamBeginCapture(stream, cudaStreamCaptureModeGlobal));
+    matrixAdd&lt;&lt;&lt;blocksPerGrid, BLOCK_SIZE, 0, stream&gt;&gt;&gt;(d_A, d_B, d_C, N);
+    matrixScale&lt;&lt;&lt;blocksPerGrid, BLOCK_SIZE, 0, stream&gt;&gt;&gt;(d_C, 2.0f, N);
+    matrixSquare&lt;&lt;&lt;blocksPerGrid, BLOCK_SIZE, 0, stream&gt;&gt;&gt;(d_C, N);
+    matrixOffset&lt;&lt;&lt;blocksPerGrid, BLOCK_SIZE, 0, stream&gt;&gt;&gt;(d_C, 1.0f, N);
+    CHECK_CUDA(cudaStreamEndCapture(stream, &amp;graph));
+    CHECK_CUDA(cudaGraphInstantiate(&amp;graphExec, graph, nullptr, nullptr, 0));
+
+    // Graph execution
+    cudaEventRecord(start, stream);
+    for (int i = 0; i &lt; NUM_ITERATIONS; i++) {
+        CHECK_CUDA(cudaGraphLaunch(graphExec, stream));
+    }
+    cudaEventRecord(stop, stream);
+    cudaEventSynchronize(stop);
+    cudaEventElapsedTime(&amp;milliseconds, start, stop);
+    printTiming("With CUDA Graphs", milliseconds);
+
+    // Copy results and verify
+    CHECK_CUDA(cudaMemcpy(h_C, d_C, size, cudaMemcpyDeviceToHost));
+    verifyResults(h_A, h_B, h_C, h_verify, N);
+
+    // Cleanup
+    cudaFree(d_A);
+    cudaFree(d_B);
+    cudaFree(d_C);
+    free(h_A);
+    free(h_B);
+    free(h_C);
+    free(h_verify);
+    cudaEventDestroy(start);
+    cudaEventDestroy(stop);
+    cudaStreamDestroy(stream);
+    cudaGraphDestroy(graph);
+    cudaGraphExecDestroy(graphExec);
+
+    return 0;
+}
+
+</code></pre>
+    </div>
+
+    <div class="file-section">
+        <h3>README.md</h3>
+        <pre><code class="language-markdown"># CUDA Matrix Operations with CUDA Graphs
+
+## Overview
+This CUDA program performs a series of matrix operations using GPU acceleration. The program demonstrates the use of CUDA kernels for matrix addition, scaling, squaring, and offsetting while measuring performance with and without CUDA Graphs.
+
+## Features
+- **Matrix Addition**: Adds two arrays element-wise.
+- **Matrix Scaling**: Multiplies each element of an array by a scalar.
+- **Matrix Squaring**: Squares each element of an array.
+- **Matrix Offsetting**: Adds a fixed offset to each element of an array.
+- **Performance Comparison**: Measures execution time using traditional CUDA execution vs. CUDA Graphs.
+- **CUDA Stream and Events**: Uses CUDA streams and events for optimized execution and performance measurement.
+- **Result Verification**: Compares GPU-computed results with CPU-verified results to ensure correctness.
+
+## Requirements
+- NVIDIA GPU with CUDA support
+- CUDA Toolkit installed
+- A C++ compiler with CUDA support (e.g., `nvcc`) 
+
+## Compilation &amp; Execution
+### Compilation:
+Compile the program using `nvcc`:
+```sh
+nvcc -O3 -o matrix_operations Cuda_graphs.cu
+```
+In colab add: -arch=sm_75 for the T4 gpu.
+### Running the Program:
+Execute the compiled binary:
+```sh
+./matrix_operations
+```
+
+## Explanation of Key Components
+### CUDA Kernels
+1. **`matrixAdd`**: Computes element-wise addition of two arrays.
+2. **`matrixScale`**: Scales each element of an array by a given scalar.
+3. **`matrixSquare`**: Squares each element of an array.
+4. **`matrixOffset`**: Adds a constant value to each element of an array.
+
+### CUDA Graphs
+- The program captures a sequence of GPU operations in a CUDA Graph to reduce kernel launch overhead.
+- Traditional execution and CUDA Graph-based execution are timed separately for performance comparison.
+
+### Performance Measurement
+- Uses `cudaEventRecord()` to measure execution time.
+- Compares traditional execution vs. CUDA Graph execution.
+
+## Expected Output
+The program will print execution times for both traditional execution and CUDA Graph execution, followed by a verification message indicating whether GPU results match CPU-computed results.
+
+Example output:
+```
+Without CUDA Graphs: 220.013 ms
+With CUDA Graphs: 89.876 ms
+Verification successful! All values match expected result.
+``</code></pre>
+    </div>
+
+    </div>
+    
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-c.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-cpp.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-python.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-markdown.min.js"></script>
+</body>
+</html>

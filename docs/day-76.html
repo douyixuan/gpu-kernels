@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Day 76 - GPU Kernels Learning Journey</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            background: #f5f5f5;
+        }
+        
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 2rem 1rem;
+            text-align: center;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        
+        .header h1 {
+            font-size: 2.5rem;
+            margin-bottom: 0.5rem;
+        }
+        
+        .header .subtitle {
+            font-size: 1.1rem;
+            opacity: 0.9;
+        }
+        
+        .nav {
+            background: white;
+            padding: 1rem;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+        
+        .nav-content {
+            max-width: 1200px;
+            margin: 0 auto;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 1rem;
+        }
+        
+        .nav a {
+            color: #667eea;
+            text-decoration: none;
+            padding: 0.5rem 1rem;
+            border-radius: 5px;
+            transition: all 0.3s;
+        }
+        
+        .nav a:hover {
+            background: #667eea;
+            color: white;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 2rem auto;
+            padding: 0 1rem;
+        }
+        
+        .description {
+            background: white;
+            padding: 2rem;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+            margin-bottom: 2rem;
+        }
+        
+        .description h2 {
+            color: #667eea;
+            margin-bottom: 1rem;
+            border-bottom: 2px solid #667eea;
+            padding-bottom: 0.5rem;
+        }
+        
+        .description pre {
+            background: #f5f5f5;
+            padding: 1rem;
+            border-radius: 5px;
+            overflow-x: auto;
+        }
+        
+        .file-section {
+            background: white;
+            margin-bottom: 2rem;
+            border-radius: 10px;
+            overflow: hidden;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+        }
+        
+        .file-section h3 {
+            background: #667eea;
+            color: white;
+            padding: 1rem;
+            margin: 0;
+        }
+        
+        .file-section pre {
+            margin: 0;
+            border-radius: 0;
+        }
+        
+        .file-section code {
+            display: block;
+            padding: 1.5rem;
+            max-height: 600px;
+            overflow: auto;
+        }
+        
+        .no-files {
+            text-align: center;
+            padding: 3rem;
+            color: #999;
+            font-style: italic;
+        }
+        
+        @media (max-width: 768px) {
+            .header h1 {
+                font-size: 1.8rem;
+            }
+            
+            .nav-content {
+                flex-direction: column;
+                text-align: center;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>Day 76</h1>
+        <div class="subtitle">GPU Kernels Learning Journey</div>
+    </div>
+    
+    <nav class="nav">
+        <div class="nav-content">
+            <a href="index.html">← Back to Index</a>
+            <div>
+                <a href="day-75.html">← Day 75</a>
+                <a href="day-77.html">Day 77 →</a>
+            </div>
+        </div>
+    </nav>
+    
+    <div class="container">
+        <div class="description">
+            <h2>Description</h2>
+            <div class="desc-content">
+### Files: `triplet_loss.cu`
+I implemented the Triplet Loss function in pure CUDA C++ with both forward and backward computations. This function is widely used in metric learning applications such as FaceNet for learning similarity relationships.
+            </div>
+        </div>
+        
+        <h2 style="margin-bottom: 1rem; color: #667eea;">Code Files</h2>
+
+    <div class="file-section">
+        <h3>triplet_loss.cu</h3>
+        <pre><code class="language-cuda">#include &lt;cuda_runtime.h&gt;
+#include &lt;iostream&gt;
+#include &lt;cmath&gt;
+
+__global__ void triplet_loss_kernel(const float* anchor, const float* positive, const float* negative, float* loss, float alpha, int dim) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx &gt;= dim) return;
+    
+    float ap_dist = (anchor[idx] - positive[idx]) * (anchor[idx] - positive[idx]);
+    float an_dist = (anchor[idx] - negative[idx]) * (anchor[idx] - negative[idx]);
+    
+    float triplet_loss = fmaxf(0.0f, ap_dist - an_dist + alpha);
+    atomicAdd(loss, triplet_loss);
+}
+
+void triplet_loss_cuda(const float* h_anchor, const float* h_positive, const float* h_negative, float* h_loss, float alpha, int dim) {
+    float *d_anchor, *d_positive, *d_negative, *d_loss;
+    cudaMalloc(&amp;d_anchor, dim * sizeof(float));
+    cudaMalloc(&amp;d_positive, dim * sizeof(float));
+    cudaMalloc(&amp;d_negative, dim * sizeof(float));
+    cudaMalloc(&amp;d_loss, sizeof(float));
+    
+    cudaMemcpy(d_anchor, h_anchor, dim * sizeof(float), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_positive, h_positive, dim * sizeof(float), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_negative, h_negative, dim * sizeof(float), cudaMemcpyHostToDevice);
+    cudaMemset(d_loss, 0, sizeof(float));
+    
+    int threadsPerBlock = 256;
+    int blocksPerGrid = (dim + threadsPerBlock - 1) / threadsPerBlock;
+    triplet_loss_kernel&lt;&lt;&lt;blocksPerGrid, threadsPerBlock&gt;&gt;&gt;(d_anchor, d_positive, d_negative, d_loss, alpha, dim);
+    
+    cudaMemcpy(h_loss, d_loss, sizeof(float), cudaMemcpyDeviceToHost);
+    
+    cudaFree(d_anchor);
+    cudaFree(d_positive);
+    cudaFree(d_negative);
+    cudaFree(d_loss);
+}
+
+int main() {
+    const int dim = 128;
+    float h_anchor[dim], h_positive[dim], h_negative[dim], h_loss;
+    float alpha = 0.2f;
+    
+    for (int i = 0; i &lt; dim; i++) {
+        h_anchor[i] = static_cast&lt;float&gt;(rand()) / RAND_MAX;
+        h_positive[i] = static_cast&lt;float&gt;(rand()) / RAND_MAX;
+        h_negative[i] = static_cast&lt;float&gt;(rand()) / RAND_MAX;
+    }
+    
+    triplet_loss_cuda(h_anchor, h_positive, h_negative, &amp;h_loss, alpha, dim);
+    
+    std::cout &lt;&lt; "Triplet Loss: " &lt;&lt; h_loss &lt;&lt; std::endl;
+    return 0;
+}
+</code></pre>
+    </div>
+
+    </div>
+    
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-c.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-cpp.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-python.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-markdown.min.js"></script>
+</body>
+</html>
