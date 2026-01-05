@@ -8,6 +8,7 @@ import os
 import re
 from pathlib import Path
 from typing import Dict, List, Tuple
+import markdown
 
 
 def parse_readme() -> Dict[int, str]:
@@ -257,7 +258,7 @@ def generate_day_page(day_num: int, description: str, files: List[Tuple[str, str
         <div class="description">
             <h2>Description</h2>
             <div class="desc-content">
-{description if description else '<p>No description available for this day.</p>'}
+{('' if not description else markdown.markdown(description, extensions=['fenced_code', 'tables'])) or '<p>No description available for this day.</p>'}
             </div>
         </div>
         
@@ -283,15 +284,34 @@ def generate_index_page(day_descriptions: Dict[int, str]) -> str:
     day_cards = ""
     for day_num in range(1, 101):
         desc = day_descriptions.get(day_num, "")
-        # Get first line or first sentence as preview
+        # Try to extract a concise preview from the Summary section or from a meaningful paragraph
         preview = ""
         if desc:
-            lines = desc.split('\n')
-            for line in lines:
-                line = line.strip()
-                if line and not line.startswith('#'):
-                    preview = line[:150] + ('...' if len(line) > 150 else '')
-                    break
+            # Prefer an explicit **Summary:** section when present
+            summary_match = re.search(r"\*\*Summary:\*\*\s*(?:\n\s*)?(.*?)(?:\n\s*\n|(?=\n###)|(?=\n\*\*)|$)", desc, re.DOTALL | re.IGNORECASE)
+            if summary_match:
+                summary = summary_match.group(1).strip().replace('\n', ' ')
+                preview = summary[:150] + ('...' if len(summary) > 150 else '')
+            else:
+                # Fallback: use the first non-heading paragraph with sufficient length
+                paragraphs = [p.strip() for p in re.split(r"\n\s*\n", desc) if p.strip()]
+                for p in paragraphs:
+                    # Skip headings and file listings
+                    if p.startswith('#') or p.lower().startswith('###') or p.lower().startswith('file:'):
+                        continue
+                    first_line = p.split('\n', 1)[0].strip()
+                    if len(first_line) >= 20:
+                        preview = first_line[:150] + ('...' if len(first_line) > 150 else '')
+                        break
+
+                # As a last resort, fall back to the previous behavior
+                if not preview:
+                    lines = desc.split('\n')
+                    for line in lines:
+                        line = line.strip()
+                        if line and not line.startswith('#'):
+                            preview = line[:150] + ('...' if len(line) > 150 else '')
+                            break
         
         if not preview:
             preview = "Click to view details"

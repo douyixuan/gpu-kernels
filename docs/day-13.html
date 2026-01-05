@@ -163,37 +163,342 @@
         <div class="description">
             <h2>Description</h2>
             <div class="desc-content">
-I coded a Breadth first search optimized kernel, check this for more details: [BFS](./day%2013/Bfs/README.md) .
-
-I also coded  Gelu activation kernel, check this for more details: [Gelu](./day%2013/Gelu/README.md) .
-
-And also coded a full linear layer that treats batches using cublas: [Linear_kernel](./day%2013/Glu/README.md) .
-
----
-
-### Reading:
-- Read **Chapter 12** of the PMPP book.  
-  - Explored parallel patterns for graph searches, covering:
-    - Background on graph structures and traversal mechanisms.
-    - Detailed sections on implementing both sequential and parallel BFS functions.
-    - Insights into optimizing graph traversal performance, including memory bandwidth considerations and load balancing strategies in parallel algorithms.
-- Read **Chapter 13** of the PMPP book.
-  - Learned about the fundamentals of CUDA Dynamic Parallelism, including:
-    - The basics and overview of dynamic parallelism in CUDA.
-    - How memory visibility works, especially in the context of different memory types (global, shared, local).
-    - Memory management strategies and the impact of nesting depth on kernel launches.
-    - Synchronization techniques, streams, and events for managing concurrent operations within dynamic kernels.
-    - Studied a more complex example about Bezier curve calculations both with and without dynamic parallelism, enhancing my understanding of recursive  
----
-
-### Future Plans:
-- Optimize the BFS implementation using hierarchical queues for better memory usage and performance.
-- Explore additional enhancements and optimizations discussed in Chapter 12 to refine the BFS algorithm further.
-- Prepare a performance comparison between CPU and GPU implementations in the subsequent days.
+<p>I coded a Breadth first search optimized kernel, check this for more details: <a href="./day%2013/Bfs/README.md">BFS</a> .</p>
+<p>I also coded  Gelu activation kernel, check this for more details: <a href="./day%2013/Gelu/README.md">Gelu</a> .</p>
+<p>And also coded a full linear layer that treats batches using cublas: <a href="./day%2013/Glu/README.md">Linear_kernel</a> .</p>
+<hr />
+<h3>Reading:</h3>
+<ul>
+<li>Read <strong>Chapter 12</strong> of the PMPP book.  </li>
+<li>Explored parallel patterns for graph searches, covering:<ul>
+<li>Background on graph structures and traversal mechanisms.</li>
+<li>Detailed sections on implementing both sequential and parallel BFS functions.</li>
+<li>Insights into optimizing graph traversal performance, including memory bandwidth considerations and load balancing strategies in parallel algorithms.</li>
+</ul>
+</li>
+<li>Read <strong>Chapter 13</strong> of the PMPP book.</li>
+<li>Learned about the fundamentals of CUDA Dynamic Parallelism, including:<ul>
+<li>The basics and overview of dynamic parallelism in CUDA.</li>
+<li>How memory visibility works, especially in the context of different memory types (global, shared, local).</li>
+<li>Memory management strategies and the impact of nesting depth on kernel launches.</li>
+<li>Synchronization techniques, streams, and events for managing concurrent operations within dynamic kernels.</li>
+<li>Studied a more complex example about Bezier curve calculations both with and without dynamic parallelism, enhancing my understanding of recursive  </li>
+</ul>
+</li>
+</ul>
+<hr />
+<h3>Future Plans:</h3>
+<ul>
+<li>Optimize the BFS implementation using hierarchical queues for better memory usage and performance.</li>
+<li>Explore additional enhancements and optimizations discussed in Chapter 12 to refine the BFS algorithm further.</li>
+<li>Prepare a performance comparison between CPU and GPU implementations in the subsequent days.</li>
+</ul>
             </div>
         </div>
         
         <h2 style="margin-bottom: 1rem; color: #667eea;">Code Files</h2>
+
+    <div class="file-section">
+        <h3>Bfs/main.c</h3>
+        <pre><code class="language-c">
+#include "bfs.h"
+
+
+int main() {
+    int num_edges;
+    int *h_edges, *h_dest;
+    
+    printf("Generating random graph with %d vertices...\n", NUM_VERTICES);
+    generate_random_graph(NUM_VERTICES, &amp;num_edges, &amp;h_edges, &amp;h_dest);
+    printf("Generated graph with %d edges\n", num_edges);
+    
+    int* gpu_labels = (int*)malloc(NUM_VERTICES * sizeof(int));
+    int* cpu_labels = (int*)malloc(NUM_VERTICES * sizeof(int));
+    
+    if (!gpu_labels || !cpu_labels) {
+        printf("Memory allocation failed!\n");
+        exit(1);
+    }
+    
+    int source = 0;
+    
+    // GPU BFS
+    printf("\nRunning GPU BFS...\n");
+    clock_t gpu_start = clock();
+    bfs_gpu(source, NUM_VERTICES, num_edges, h_edges, h_dest, gpu_labels);
+    clock_t gpu_end = clock();
+    double gpu_time = ((double)(gpu_end - gpu_start)) / CLOCKS_PER_SEC;
+    
+    // CPU BFS
+    printf("Running CPU BFS...\n");
+    clock_t cpu_start = clock();
+    cpu_bfs(source, NUM_VERTICES, num_edges, h_edges, h_dest, cpu_labels);
+    clock_t cpu_end = clock();
+    double cpu_time = ((double)(cpu_end - cpu_start)) / CLOCKS_PER_SEC;
+    
+    // Results verification and statistics
+    int mismatches = 0;
+    int max_level_gpu = 0;
+    int max_level_cpu = 0;
+    int unreached_gpu = 0;
+    int unreached_cpu = 0;
+    
+    for (int i = 0; i &lt; NUM_VERTICES; i++) {
+        if (gpu_labels[i] &gt; max_level_gpu) max_level_gpu = gpu_labels[i];
+        if (cpu_labels[i] &gt; max_level_cpu) max_level_cpu = cpu_labels[i];
+        if (gpu_labels[i] == -1) unreached_gpu++;
+        if (cpu_labels[i] == -1) unreached_cpu++;
+        if (gpu_labels[i] != cpu_labels[i]) mismatches++;
+    }
+    
+    // Print results
+    printf("\nPerformance Results:\n");
+    printf("GPU Time: %.6f seconds\n", gpu_time);
+    printf("CPU Time: %.6f seconds\n", cpu_time);
+    printf("Speedup: %.2fx\n", cpu_time/gpu_time);
+    
+    printf("\nQuality Results:\n");
+    printf("Total mismatches: %d (%.2f%%)\n", mismatches, (100.0 * mismatches) / NUM_VERTICES);
+    printf("Max level (GPU): %d\n", max_level_gpu);
+    printf("Max level (CPU): %d\n", max_level_cpu);
+    printf("Unreached vertices (GPU): %d (%.2f%%)\n", unreached_gpu, (100.0 * unreached_gpu) / NUM_VERTICES);
+    printf("Unreached vertices (CPU): %d (%.2f%%)\n", unreached_cpu, (100.0 * unreached_cpu) / NUM_VERTICES);
+    
+    // Cleanup
+    free(h_edges);
+    free(h_dest);
+    free(gpu_labels);
+    free(cpu_labels);
+    
+    return 0;
+}</code></pre>
+    </div>
+
+    <div class="file-section">
+        <h3>Bfs/bfs_gpu.cu</h3>
+        <pre><code class="language-cuda">#include "bfs.h"
+#include "bfs_kernel.cu"
+
+/*
+We call the bfs_kernel many time from the host, as a first approximiation, I think this is better than trying to fuse everything in the kernel since it can lead
+to warp divergence. However, I believe there is a better way to do this for sure, like using private and globa queus which I'll do when I need this algorithm in an application of mine.
+
+*/
+
+void bfs_gpu(int source, int num_vertices, int num_edges, int* h_edges, int* h_dest, int* h_labels) {
+    int *d_edges, *d_dest, *d_labels, *d_done;
+    
+    CHECK_CUDA_ERROR(cudaMalloc((void**)&amp;d_edges, (num_vertices + 1) * sizeof(int)));
+    CHECK_CUDA_ERROR(cudaMalloc((void**)&amp;d_dest, num_edges * sizeof(int)));
+    CHECK_CUDA_ERROR(cudaMalloc((void**)&amp;d_labels, num_vertices * sizeof(int)));
+    CHECK_CUDA_ERROR(cudaMalloc((void**)&amp;d_done, sizeof(int)));
+    
+    CHECK_CUDA_ERROR(cudaMemset(d_labels, -1, num_vertices * sizeof(int)));
+    CHECK_CUDA_ERROR(cudaMemcpy(d_edges, h_edges, (num_vertices + 1) * sizeof(int), cudaMemcpyHostToDevice));
+    CHECK_CUDA_ERROR(cudaMemcpy(d_dest, h_dest, num_edges * sizeof(int), cudaMemcpyHostToDevice));
+    
+    int initial_level = 0;
+    CHECK_CUDA_ERROR(cudaMemcpy(d_labels + source, &amp;initial_level, sizeof(int), cudaMemcpyHostToDevice));
+    
+    int level = 0;
+    int h_done;
+    int threadsPerBlock = THREADS_PER_BLOCK;
+    int blocksPerGrid = (num_vertices + threadsPerBlock - 1) / threadsPerBlock;
+    
+    do {
+        h_done = 1;
+        CHECK_CUDA_ERROR(cudaMemcpy(d_done, &amp;h_done, sizeof(int), cudaMemcpyHostToDevice));
+        
+        bfs_kernel&lt;&lt;&lt;blocksPerGrid, threadsPerBlock&gt;&gt;&gt;(level, num_vertices, d_edges, d_dest, d_labels, d_done);
+        CHECK_CUDA_ERROR(cudaDeviceSynchronize());
+        
+        CHECK_CUDA_ERROR(cudaMemcpy(&amp;h_done, d_done, sizeof(int), cudaMemcpyDeviceToHost));
+        level++;
+    } while (!h_done &amp;&amp; level &lt; num_vertices);
+    
+    CHECK_CUDA_ERROR(cudaMemcpy(h_labels, d_labels, num_vertices * sizeof(int), cudaMemcpyDeviceToHost));
+    
+    CHECK_CUDA_ERROR(cudaFree(d_edges));
+    CHECK_CUDA_ERROR(cudaFree(d_dest));
+    CHECK_CUDA_ERROR(cudaFree(d_labels));
+    CHECK_CUDA_ERROR(cudaFree(d_done));
+}</code></pre>
+    </div>
+
+    <div class="file-section">
+        <h3>Bfs/bfs.h</h3>
+        <pre><code class="language-c">#ifndef BFS_H
+#define BFS_H
+
+#include &lt;cuda_runtime.h&gt;
+#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+#include &lt;time.h&gt;
+#include &lt;stdbool.h&gt;
+
+#define THREADS_PER_BLOCK 256
+#define MAX_FRONTIER_SIZE 100000000
+#define AVERAGE_EDGES_PER_VERTEX 8
+#define NUM_VERTICES 100000000
+
+#define CHECK_CUDA_ERROR(call) \
+    { \
+        cudaError_t err = call; \
+        if (err != cudaSuccess) { \
+            printf("CUDA Error: %s (code %d) at %s:%d\n", \
+                   cudaGetErrorString(err), err, __FILE__, __LINE__); \
+            exit(EXIT_FAILURE); \
+        } \
+    }
+
+void generate_random_graph(int num_vertices, int* num_edges, int** edges, int** dest);
+void bfs_gpu(int source, int num_vertices, int num_edges, int* h_edges, int* h_dest, int* h_labels);
+void cpu_bfs(int source, int num_vertices, int num_edges, int* edges, int* dest, int* label);
+
+#endif // BFS_H
+</code></pre>
+    </div>
+
+    <div class="file-section">
+        <h3>Bfs/bfs_kernel.cu</h3>
+        <pre><code class="language-cuda">#include "bfs.h"
+
+__global__ void bfs_kernel(int level, int num_vertices, int* edges, int* dest, int* labels, int* done) {
+    int tid = blockDim.x * blockIdx.x + threadIdx.x;
+    if (tid &lt; num_vertices &amp;&amp; labels[tid] == level) {
+        for (int edge = edges[tid]; edge &lt; edges[tid + 1]; edge++) {
+            int neighbor = dest[edge];
+            if (atomicCAS(&amp;labels[neighbor], -1, level + 1) == -1) {
+                atomicExch(done, 0);
+            }
+        }
+    }
+}
+</code></pre>
+    </div>
+
+    <div class="file-section">
+        <h3>Bfs/README.md</h3>
+        <pre><code class="language-markdown">
+### File: `bfs.h`
+**Summary:**  
+Created a header file for the Parallelized Breadth-First Search (BFS) project. This file includes essential macros, function declarations, and utility functions to facilitate the implementation of the BFS algorithm on the GPU.  
+
+---
+
+### File: `bfs_kernel.cu`
+**Summary:**  
+Implemented the CUDA kernel for parallel BFS in the `bfs_kernel.cu` file. The kernel utilizes atomic operations to ensure thread-safe updates to labels, enabling multiple threads to explore graph edges concurrently.  
+
+**Learned:**  
+- How to design a CUDA kernel for graph traversal using parallelization strategies.
+- Used `atomicCAS` to manage concurrent access to shared label data, preventing data races.
+- The concept of marking nodes at each BFS level and how to signal completion of traversal via atomic flags.
+
+---
+
+### File: `bfs_gpu.cu`
+**Summary:**  
+Developed the main GPU function `bfs_gpu` that integrates the graph traversal functionality, orchestrating the initialization of kernel launches and memory management for the BFS operation.  
+
+**Learned:**  
+- How to manage kernel launches based on the graph size and structure.
+- Strategies for handling the BFS frontier and updating labels.
+
+---
+
+### File: `bfs_cpu.c`
+**Summary:**  
+Completed implementations for the CPU BFS version and a random graph generator. This aids in testing the correctness of the GPU BFS by providing a reliable CPU counterpart for comparison.  </code></pre>
+    </div>
+
+    <div class="file-section">
+        <h3>Bfs/bfs_cpu.c</h3>
+        <pre><code class="language-c">#include "bfs.h"
+
+
+
+// Function to generate a random large graph in CSR format
+void generate_random_graph(int num_vertices, int* num_edges, int** edges, int** dest) {
+    srand(time(NULL));
+    
+    // Allocate maximum possible space for destinations
+    int max_edges = num_vertices * AVERAGE_EDGES_PER_VERTEX;
+    *dest = (int*)malloc(max_edges * sizeof(int));
+    *edges = (int*)malloc((num_vertices + 1) * sizeof(int));
+    
+    int current_edge = 0;
+    (*edges)[0] = 0;
+    
+    // For each vertex
+    for (int i = 0; i &lt; num_vertices; i++) {
+        // Generate random number of edges for this vertex
+        int edges_for_vertex = rand() % (AVERAGE_EDGES_PER_VERTEX * 2);
+        
+        // Add random edges
+        for (int j = 0; j &lt; edges_for_vertex; j++) {
+            int dest_vertex = rand() % num_vertices;
+            if (dest_vertex != i) {  // Avoid self-loops
+                (*dest)[current_edge++] = dest_vertex;
+            }
+        }
+        
+        (*edges)[i + 1] = current_edge;
+    }
+    
+    *num_edges = current_edge;
+    
+    // Reallocate dest array to actual size
+    *dest = (int*)realloc(*dest, current_edge * sizeof(int));
+}
+
+
+
+void cpu_bfs(int source, int num_vertices, int num_edges, int* edges, int* dest, int* label) {
+    // Initialize labels
+    for (int i = 0; i &lt; num_vertices; i++) {
+        label[i] = -1;
+    }
+    
+    int* current_frontier = (int*)malloc(num_vertices * sizeof(int));
+    int* next_frontier = (int*)malloc(num_vertices * sizeof(int));
+    int current_size = 0;
+    int next_size = 0;
+    
+    label[source] = 0;
+    current_frontier[0] = source;
+    current_size = 1;
+    
+    int level = 0;
+    
+    while (current_size &gt; 0) {
+        next_size = 0;
+        level++;
+        
+        for (int i = 0; i &lt; current_size; i++) {
+            int vertex = current_frontier[i];
+            
+            for (int edge = edges[vertex]; edge &lt; edges[vertex + 1]; edge++) {
+                int neighbor = dest[edge];
+                
+                if (label[neighbor] == -1) {
+                    label[neighbor] = level;
+                    next_frontier[next_size++] = neighbor;
+                }
+            }
+        }
+        
+        int* temp = current_frontier;
+        current_frontier = next_frontier;
+        next_frontier = temp;
+        current_size = next_size;
+    }
+    
+    free(current_frontier);
+    free(next_frontier);
+}
+</code></pre>
+    </div>
 
     <div class="file-section">
         <h3>Linear_kernel/cuda_kernels.h</h3>
@@ -205,58 +510,70 @@ void performLinearLayerOperation(cublasHandle_t cublas_handle, const float* inpu
     </div>
 
     <div class="file-section">
-        <h3>Linear_kernel/cuda_kernels.cu</h3>
-        <pre><code class="language-cuda">#include "cuda_kernels.h"
-#include "helper_functions.h"
+        <h3>Linear_kernel/helper_functions.cpp</h3>
+        <pre><code class="language-cpp">#include "helper_functions.h"
 
-__global__ void addBiasKernel(float* output, const float* bias, int batch_size, int output_features) {
-    int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    int batch = idx / output_features;
-    int feature = idx % output_features;
-
-    if (batch &lt; batch_size &amp;&amp; feature &lt; output_features) {
-        output[batch * output_features + feature] += bias[feature];
+void printMatrix(const char* name, const float* matrix, int rows, int cols) {
+    std::cout &lt;&lt; name &lt;&lt; " (" &lt;&lt; rows &lt;&lt; "x" &lt;&lt; cols &lt;&lt; "):\n";
+    for (int i = 0; i &lt; rows; ++i) {
+        for (int j = 0; j &lt; cols; ++j) {
+            std::cout &lt;&lt; std::setw(8) &lt;&lt; std::fixed &lt;&lt; std::setprecision(4) &lt;&lt; matrix[i * cols + j] &lt;&lt; " ";
+        }
+        std::cout &lt;&lt; "\n";
     }
 }
 
-void performLinearLayerOperation(
-    cublasHandle_t cublas_handle,
-    const float* input_data,
-    const float* weights_data,
-    const float* bias_data,
-    float* output_data,
-    int batch_size,
-    int input_features,
-    int output_features
-) {
-    const float alpha = 1.0f;
-    const float beta = 0.0f;
-
-    checkCublasStatus(cublasSgemm(
-        cublas_handle,
-        CUBLAS_OP_T,
-        CUBLAS_OP_N,
-        output_features,
-        batch_size,
-        input_features,
-        &amp;alpha,
-        weights_data,
-        input_features,
-        input_data,
-        input_features,
-        &amp;beta,
-        output_data,
-        output_features
-    ));
-
-    int total_elements = batch_size * output_features;
-    int block_size = 256;
-    int num_blocks = (total_elements + block_size - 1) / block_size;
-
-    addBiasKernel&lt;&lt;&lt;num_blocks, block_size&gt;&gt;&gt;(output_data, bias_data, batch_size, output_features);
-    checkCudaStatus(cudaGetLastError());
-    checkCudaStatus(cudaDeviceSynchronize());
+void initializeRandomMatrix(float* matrix, int size, float min_val, float max_val) {
+    std::random_device rd;
+    std::mt19937 gen(rd());
+    std::uniform_real_distribution&lt;float&gt; dis(min_val, max_val);
+    for (int i = 0; i &lt; size; ++i) {
+        matrix[i] = dis(gen);
+    }
 }
+
+cudaError_t allocateDeviceMemory(float** device_pointer, size_t size) {
+    return cudaMalloc(device_pointer, size);
+}
+
+void freeDeviceMemory(float* device_pointer) {
+    if (device_pointer) {
+        cudaFree(device_pointer);
+    }
+}
+
+void checkCudaStatus(cudaError_t status) {
+    if (status != cudaSuccess) {
+        std::cerr &lt;&lt; "CUDA error: " &lt;&lt; cudaGetErrorString(status) &lt;&lt; std::endl;
+        exit(EXIT_FAILURE);
+    }
+}
+
+void checkCublasStatus(cublasStatus_t status) {
+    if (status != CUBLAS_STATUS_SUCCESS) {
+        std::cerr &lt;&lt; "cuBLAS error: " &lt;&lt; status &lt;&lt; std::endl;
+        exit(EXIT_FAILURE);
+    }
+}
+</code></pre>
+    </div>
+
+    <div class="file-section">
+        <h3>Linear_kernel/helper_functions.h</h3>
+        <pre><code class="language-c">#pragma once
+
+#include &lt;cuda_runtime.h&gt;
+#include &lt;cublas_v2.h&gt;
+#include &lt;iostream&gt;
+#include &lt;iomanip&gt;
+#include &lt;random&gt;
+
+void printMatrix(const char* name, const float* matrix, int rows, int cols);
+void initializeRandomMatrix(float* matrix, int size, float min_val, float max_val);
+cudaError_t allocateDeviceMemory(float** device_pointer, size_t size);
+void freeDeviceMemory(float* device_pointer);
+void checkCudaStatus(cudaError_t status);
+void checkCublasStatus(cublasStatus_t status);
 </code></pre>
     </div>
 
@@ -387,404 +704,58 @@ nvcc linear_kernel.cu helper_functions.cpp cuda_kernels.cu -lcublas -o linear_la
     </div>
 
     <div class="file-section">
-        <h3>Linear_kernel/helper_functions.cpp</h3>
-        <pre><code class="language-cpp">#include "helper_functions.h"
+        <h3>Linear_kernel/cuda_kernels.cu</h3>
+        <pre><code class="language-cuda">#include "cuda_kernels.h"
+#include "helper_functions.h"
 
-void printMatrix(const char* name, const float* matrix, int rows, int cols) {
-    std::cout &lt;&lt; name &lt;&lt; " (" &lt;&lt; rows &lt;&lt; "x" &lt;&lt; cols &lt;&lt; "):\n";
-    for (int i = 0; i &lt; rows; ++i) {
-        for (int j = 0; j &lt; cols; ++j) {
-            std::cout &lt;&lt; std::setw(8) &lt;&lt; std::fixed &lt;&lt; std::setprecision(4) &lt;&lt; matrix[i * cols + j] &lt;&lt; " ";
-        }
-        std::cout &lt;&lt; "\n";
+__global__ void addBiasKernel(float* output, const float* bias, int batch_size, int output_features) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    int batch = idx / output_features;
+    int feature = idx % output_features;
+
+    if (batch &lt; batch_size &amp;&amp; feature &lt; output_features) {
+        output[batch * output_features + feature] += bias[feature];
     }
 }
 
-void initializeRandomMatrix(float* matrix, int size, float min_val, float max_val) {
-    std::random_device rd;
-    std::mt19937 gen(rd());
-    std::uniform_real_distribution&lt;float&gt; dis(min_val, max_val);
-    for (int i = 0; i &lt; size; ++i) {
-        matrix[i] = dis(gen);
-    }
+void performLinearLayerOperation(
+    cublasHandle_t cublas_handle,
+    const float* input_data,
+    const float* weights_data,
+    const float* bias_data,
+    float* output_data,
+    int batch_size,
+    int input_features,
+    int output_features
+) {
+    const float alpha = 1.0f;
+    const float beta = 0.0f;
+
+    checkCublasStatus(cublasSgemm(
+        cublas_handle,
+        CUBLAS_OP_T,
+        CUBLAS_OP_N,
+        output_features,
+        batch_size,
+        input_features,
+        &amp;alpha,
+        weights_data,
+        input_features,
+        input_data,
+        input_features,
+        &amp;beta,
+        output_data,
+        output_features
+    ));
+
+    int total_elements = batch_size * output_features;
+    int block_size = 256;
+    int num_blocks = (total_elements + block_size - 1) / block_size;
+
+    addBiasKernel&lt;&lt;&lt;num_blocks, block_size&gt;&gt;&gt;(output_data, bias_data, batch_size, output_features);
+    checkCudaStatus(cudaGetLastError());
+    checkCudaStatus(cudaDeviceSynchronize());
 }
-
-cudaError_t allocateDeviceMemory(float** device_pointer, size_t size) {
-    return cudaMalloc(device_pointer, size);
-}
-
-void freeDeviceMemory(float* device_pointer) {
-    if (device_pointer) {
-        cudaFree(device_pointer);
-    }
-}
-
-void checkCudaStatus(cudaError_t status) {
-    if (status != cudaSuccess) {
-        std::cerr &lt;&lt; "CUDA error: " &lt;&lt; cudaGetErrorString(status) &lt;&lt; std::endl;
-        exit(EXIT_FAILURE);
-    }
-}
-
-void checkCublasStatus(cublasStatus_t status) {
-    if (status != CUBLAS_STATUS_SUCCESS) {
-        std::cerr &lt;&lt; "cuBLAS error: " &lt;&lt; status &lt;&lt; std::endl;
-        exit(EXIT_FAILURE);
-    }
-}
-</code></pre>
-    </div>
-
-    <div class="file-section">
-        <h3>Linear_kernel/helper_functions.h</h3>
-        <pre><code class="language-c">#pragma once
-
-#include &lt;cuda_runtime.h&gt;
-#include &lt;cublas_v2.h&gt;
-#include &lt;iostream&gt;
-#include &lt;iomanip&gt;
-#include &lt;random&gt;
-
-void printMatrix(const char* name, const float* matrix, int rows, int cols);
-void initializeRandomMatrix(float* matrix, int size, float min_val, float max_val);
-cudaError_t allocateDeviceMemory(float** device_pointer, size_t size);
-void freeDeviceMemory(float* device_pointer);
-void checkCudaStatus(cudaError_t status);
-void checkCublasStatus(cublasStatus_t status);
-</code></pre>
-    </div>
-
-    <div class="file-section">
-        <h3>Bfs/bfs.h</h3>
-        <pre><code class="language-c">#ifndef BFS_H
-#define BFS_H
-
-#include &lt;cuda_runtime.h&gt;
-#include &lt;stdio.h&gt;
-#include &lt;stdlib.h&gt;
-#include &lt;time.h&gt;
-#include &lt;stdbool.h&gt;
-
-#define THREADS_PER_BLOCK 256
-#define MAX_FRONTIER_SIZE 100000000
-#define AVERAGE_EDGES_PER_VERTEX 8
-#define NUM_VERTICES 100000000
-
-#define CHECK_CUDA_ERROR(call) \
-    { \
-        cudaError_t err = call; \
-        if (err != cudaSuccess) { \
-            printf("CUDA Error: %s (code %d) at %s:%d\n", \
-                   cudaGetErrorString(err), err, __FILE__, __LINE__); \
-            exit(EXIT_FAILURE); \
-        } \
-    }
-
-void generate_random_graph(int num_vertices, int* num_edges, int** edges, int** dest);
-void bfs_gpu(int source, int num_vertices, int num_edges, int* h_edges, int* h_dest, int* h_labels);
-void cpu_bfs(int source, int num_vertices, int num_edges, int* edges, int* dest, int* label);
-
-#endif // BFS_H
-</code></pre>
-    </div>
-
-    <div class="file-section">
-        <h3>Bfs/bfs_cpu.c</h3>
-        <pre><code class="language-c">#include "bfs.h"
-
-
-
-// Function to generate a random large graph in CSR format
-void generate_random_graph(int num_vertices, int* num_edges, int** edges, int** dest) {
-    srand(time(NULL));
-    
-    // Allocate maximum possible space for destinations
-    int max_edges = num_vertices * AVERAGE_EDGES_PER_VERTEX;
-    *dest = (int*)malloc(max_edges * sizeof(int));
-    *edges = (int*)malloc((num_vertices + 1) * sizeof(int));
-    
-    int current_edge = 0;
-    (*edges)[0] = 0;
-    
-    // For each vertex
-    for (int i = 0; i &lt; num_vertices; i++) {
-        // Generate random number of edges for this vertex
-        int edges_for_vertex = rand() % (AVERAGE_EDGES_PER_VERTEX * 2);
-        
-        // Add random edges
-        for (int j = 0; j &lt; edges_for_vertex; j++) {
-            int dest_vertex = rand() % num_vertices;
-            if (dest_vertex != i) {  // Avoid self-loops
-                (*dest)[current_edge++] = dest_vertex;
-            }
-        }
-        
-        (*edges)[i + 1] = current_edge;
-    }
-    
-    *num_edges = current_edge;
-    
-    // Reallocate dest array to actual size
-    *dest = (int*)realloc(*dest, current_edge * sizeof(int));
-}
-
-
-
-void cpu_bfs(int source, int num_vertices, int num_edges, int* edges, int* dest, int* label) {
-    // Initialize labels
-    for (int i = 0; i &lt; num_vertices; i++) {
-        label[i] = -1;
-    }
-    
-    int* current_frontier = (int*)malloc(num_vertices * sizeof(int));
-    int* next_frontier = (int*)malloc(num_vertices * sizeof(int));
-    int current_size = 0;
-    int next_size = 0;
-    
-    label[source] = 0;
-    current_frontier[0] = source;
-    current_size = 1;
-    
-    int level = 0;
-    
-    while (current_size &gt; 0) {
-        next_size = 0;
-        level++;
-        
-        for (int i = 0; i &lt; current_size; i++) {
-            int vertex = current_frontier[i];
-            
-            for (int edge = edges[vertex]; edge &lt; edges[vertex + 1]; edge++) {
-                int neighbor = dest[edge];
-                
-                if (label[neighbor] == -1) {
-                    label[neighbor] = level;
-                    next_frontier[next_size++] = neighbor;
-                }
-            }
-        }
-        
-        int* temp = current_frontier;
-        current_frontier = next_frontier;
-        next_frontier = temp;
-        current_size = next_size;
-    }
-    
-    free(current_frontier);
-    free(next_frontier);
-}
-</code></pre>
-    </div>
-
-    <div class="file-section">
-        <h3>Bfs/README.md</h3>
-        <pre><code class="language-markdown">
-### File: `bfs.h`
-**Summary:**  
-Created a header file for the Parallelized Breadth-First Search (BFS) project. This file includes essential macros, function declarations, and utility functions to facilitate the implementation of the BFS algorithm on the GPU.  
-
----
-
-### File: `bfs_kernel.cu`
-**Summary:**  
-Implemented the CUDA kernel for parallel BFS in the `bfs_kernel.cu` file. The kernel utilizes atomic operations to ensure thread-safe updates to labels, enabling multiple threads to explore graph edges concurrently.  
-
-**Learned:**  
-- How to design a CUDA kernel for graph traversal using parallelization strategies.
-- Used `atomicCAS` to manage concurrent access to shared label data, preventing data races.
-- The concept of marking nodes at each BFS level and how to signal completion of traversal via atomic flags.
-
----
-
-### File: `bfs_gpu.cu`
-**Summary:**  
-Developed the main GPU function `bfs_gpu` that integrates the graph traversal functionality, orchestrating the initialization of kernel launches and memory management for the BFS operation.  
-
-**Learned:**  
-- How to manage kernel launches based on the graph size and structure.
-- Strategies for handling the BFS frontier and updating labels.
-
----
-
-### File: `bfs_cpu.c`
-**Summary:**  
-Completed implementations for the CPU BFS version and a random graph generator. This aids in testing the correctness of the GPU BFS by providing a reliable CPU counterpart for comparison.  </code></pre>
-    </div>
-
-    <div class="file-section">
-        <h3>Bfs/main.c</h3>
-        <pre><code class="language-c">
-#include "bfs.h"
-
-
-int main() {
-    int num_edges;
-    int *h_edges, *h_dest;
-    
-    printf("Generating random graph with %d vertices...\n", NUM_VERTICES);
-    generate_random_graph(NUM_VERTICES, &amp;num_edges, &amp;h_edges, &amp;h_dest);
-    printf("Generated graph with %d edges\n", num_edges);
-    
-    int* gpu_labels = (int*)malloc(NUM_VERTICES * sizeof(int));
-    int* cpu_labels = (int*)malloc(NUM_VERTICES * sizeof(int));
-    
-    if (!gpu_labels || !cpu_labels) {
-        printf("Memory allocation failed!\n");
-        exit(1);
-    }
-    
-    int source = 0;
-    
-    // GPU BFS
-    printf("\nRunning GPU BFS...\n");
-    clock_t gpu_start = clock();
-    bfs_gpu(source, NUM_VERTICES, num_edges, h_edges, h_dest, gpu_labels);
-    clock_t gpu_end = clock();
-    double gpu_time = ((double)(gpu_end - gpu_start)) / CLOCKS_PER_SEC;
-    
-    // CPU BFS
-    printf("Running CPU BFS...\n");
-    clock_t cpu_start = clock();
-    cpu_bfs(source, NUM_VERTICES, num_edges, h_edges, h_dest, cpu_labels);
-    clock_t cpu_end = clock();
-    double cpu_time = ((double)(cpu_end - cpu_start)) / CLOCKS_PER_SEC;
-    
-    // Results verification and statistics
-    int mismatches = 0;
-    int max_level_gpu = 0;
-    int max_level_cpu = 0;
-    int unreached_gpu = 0;
-    int unreached_cpu = 0;
-    
-    for (int i = 0; i &lt; NUM_VERTICES; i++) {
-        if (gpu_labels[i] &gt; max_level_gpu) max_level_gpu = gpu_labels[i];
-        if (cpu_labels[i] &gt; max_level_cpu) max_level_cpu = cpu_labels[i];
-        if (gpu_labels[i] == -1) unreached_gpu++;
-        if (cpu_labels[i] == -1) unreached_cpu++;
-        if (gpu_labels[i] != cpu_labels[i]) mismatches++;
-    }
-    
-    // Print results
-    printf("\nPerformance Results:\n");
-    printf("GPU Time: %.6f seconds\n", gpu_time);
-    printf("CPU Time: %.6f seconds\n", cpu_time);
-    printf("Speedup: %.2fx\n", cpu_time/gpu_time);
-    
-    printf("\nQuality Results:\n");
-    printf("Total mismatches: %d (%.2f%%)\n", mismatches, (100.0 * mismatches) / NUM_VERTICES);
-    printf("Max level (GPU): %d\n", max_level_gpu);
-    printf("Max level (CPU): %d\n", max_level_cpu);
-    printf("Unreached vertices (GPU): %d (%.2f%%)\n", unreached_gpu, (100.0 * unreached_gpu) / NUM_VERTICES);
-    printf("Unreached vertices (CPU): %d (%.2f%%)\n", unreached_cpu, (100.0 * unreached_cpu) / NUM_VERTICES);
-    
-    // Cleanup
-    free(h_edges);
-    free(h_dest);
-    free(gpu_labels);
-    free(cpu_labels);
-    
-    return 0;
-}</code></pre>
-    </div>
-
-    <div class="file-section">
-        <h3>Bfs/bfs_kernel.cu</h3>
-        <pre><code class="language-cuda">#include "bfs.h"
-
-__global__ void bfs_kernel(int level, int num_vertices, int* edges, int* dest, int* labels, int* done) {
-    int tid = blockDim.x * blockIdx.x + threadIdx.x;
-    if (tid &lt; num_vertices &amp;&amp; labels[tid] == level) {
-        for (int edge = edges[tid]; edge &lt; edges[tid + 1]; edge++) {
-            int neighbor = dest[edge];
-            if (atomicCAS(&amp;labels[neighbor], -1, level + 1) == -1) {
-                atomicExch(done, 0);
-            }
-        }
-    }
-}
-</code></pre>
-    </div>
-
-    <div class="file-section">
-        <h3>Bfs/bfs_gpu.cu</h3>
-        <pre><code class="language-cuda">#include "bfs.h"
-#include "bfs_kernel.cu"
-
-/*
-We call the bfs_kernel many time from the host, as a first approximiation, I think this is better than trying to fuse everything in the kernel since it can lead
-to warp divergence. However, I believe there is a better way to do this for sure, like using private and globa queus which I'll do when I need this algorithm in an application of mine.
-
-*/
-
-void bfs_gpu(int source, int num_vertices, int num_edges, int* h_edges, int* h_dest, int* h_labels) {
-    int *d_edges, *d_dest, *d_labels, *d_done;
-    
-    CHECK_CUDA_ERROR(cudaMalloc((void**)&amp;d_edges, (num_vertices + 1) * sizeof(int)));
-    CHECK_CUDA_ERROR(cudaMalloc((void**)&amp;d_dest, num_edges * sizeof(int)));
-    CHECK_CUDA_ERROR(cudaMalloc((void**)&amp;d_labels, num_vertices * sizeof(int)));
-    CHECK_CUDA_ERROR(cudaMalloc((void**)&amp;d_done, sizeof(int)));
-    
-    CHECK_CUDA_ERROR(cudaMemset(d_labels, -1, num_vertices * sizeof(int)));
-    CHECK_CUDA_ERROR(cudaMemcpy(d_edges, h_edges, (num_vertices + 1) * sizeof(int), cudaMemcpyHostToDevice));
-    CHECK_CUDA_ERROR(cudaMemcpy(d_dest, h_dest, num_edges * sizeof(int), cudaMemcpyHostToDevice));
-    
-    int initial_level = 0;
-    CHECK_CUDA_ERROR(cudaMemcpy(d_labels + source, &amp;initial_level, sizeof(int), cudaMemcpyHostToDevice));
-    
-    int level = 0;
-    int h_done;
-    int threadsPerBlock = THREADS_PER_BLOCK;
-    int blocksPerGrid = (num_vertices + threadsPerBlock - 1) / threadsPerBlock;
-    
-    do {
-        h_done = 1;
-        CHECK_CUDA_ERROR(cudaMemcpy(d_done, &amp;h_done, sizeof(int), cudaMemcpyHostToDevice));
-        
-        bfs_kernel&lt;&lt;&lt;blocksPerGrid, threadsPerBlock&gt;&gt;&gt;(level, num_vertices, d_edges, d_dest, d_labels, d_done);
-        CHECK_CUDA_ERROR(cudaDeviceSynchronize());
-        
-        CHECK_CUDA_ERROR(cudaMemcpy(&amp;h_done, d_done, sizeof(int), cudaMemcpyDeviceToHost));
-        level++;
-    } while (!h_done &amp;&amp; level &lt; num_vertices);
-    
-    CHECK_CUDA_ERROR(cudaMemcpy(h_labels, d_labels, num_vertices * sizeof(int), cudaMemcpyDeviceToHost));
-    
-    CHECK_CUDA_ERROR(cudaFree(d_edges));
-    CHECK_CUDA_ERROR(cudaFree(d_dest));
-    CHECK_CUDA_ERROR(cudaFree(d_labels));
-    CHECK_CUDA_ERROR(cudaFree(d_done));
-}</code></pre>
-    </div>
-
-    <div class="file-section">
-        <h3>Gelu/glu_python.py</h3>
-        <pre><code class="language-python">import numpy as np
-from scipy.stats import norm
-
-def gelu(x):
-    return x * norm.cdf(x)
-
-# Example usage
-x = np.array([-1*i/2 for i in range(100)] )
-print("GELU:", gelu(x))
-</code></pre>
-    </div>
-
-    <div class="file-section">
-        <h3>Gelu/README.md</h3>
-        <pre><code class="language-markdown"># **GELU Kernel**
-
-## Files:
-1. **`glu_python.py`**  
-   - Implements the GELU (Gaussian Error Linear Unit) activation function in Python.  
-   - Used for verifying the correctness of CUDA implementation and testing input/output behavior.  
-   - Supports input arrays of arbitrary dimensions.
-
-2. **`glu.cu`**  
-   - CUDA implementation of the GELU activation function for high-performance computation on GPUs.  
-   - Handles large-scale tensor operations with optimized memory allocation and parallelism.  
-
----
 </code></pre>
     </div>
 
@@ -838,6 +809,38 @@ int main(){
 
 
 }</code></pre>
+    </div>
+
+    <div class="file-section">
+        <h3>Gelu/glu_python.py</h3>
+        <pre><code class="language-python">import numpy as np
+from scipy.stats import norm
+
+def gelu(x):
+    return x * norm.cdf(x)
+
+# Example usage
+x = np.array([-1*i/2 for i in range(100)] )
+print("GELU:", gelu(x))
+</code></pre>
+    </div>
+
+    <div class="file-section">
+        <h3>Gelu/README.md</h3>
+        <pre><code class="language-markdown"># **GELU Kernel**
+
+## Files:
+1. **`glu_python.py`**  
+   - Implements the GELU (Gaussian Error Linear Unit) activation function in Python.  
+   - Used for verifying the correctness of CUDA implementation and testing input/output behavior.  
+   - Supports input arrays of arbitrary dimensions.
+
+2. **`glu.cu`**  
+   - CUDA implementation of the GELU activation function for high-performance computation on GPUs.  
+   - Handles large-scale tensor operations with optimized memory allocation and parallelism.  
+
+---
+</code></pre>
     </div>
 
     </div>

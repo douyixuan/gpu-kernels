@@ -163,129 +163,130 @@
         <div class="description">
             <h2>Description</h2>
             <div class="desc-content">
-### File: `cmpFHD.cu`
-**Summary:**  
-Implemented the FHD (Fully-Hybrid Domain) algorithm for non-Cartesian magnetic resonance imaging (MRI) reconstruction in CUDA. The code focuses on optimizing the parallelism structure to handle iterative reconstruction efficiently, aiming to balance computational load while reducing memory footprint.
-
-**Learned:**  
+<h3>File: <code>cmpFHD.cu</code></h3>
+<p><strong>Summary:</strong><br />
+Implemented the FHD (Fully-Hybrid Domain) algorithm for non-Cartesian magnetic resonance imaging (MRI) reconstruction in CUDA. The code focuses on optimizing the parallelism structure to handle iterative reconstruction efficiently, aiming to balance computational load while reducing memory footprint.</p>
+<p><strong>Learned:</strong><br />
 - Gained insights into non-Cartesian MRI imaging techniques and their relevance in modern medical imaging applications.
 - Developed an understanding of iterative reconstruction methods and how parallelization can significantly improve performance in reconstructing images from non-Cartesian data.
-- Implemented optimizations to address common challenges in MRI reconstruction, such as memory bandwidth limitations and computational heavy-lifting.
-
-### File: `cmpFHD_real_image.cu`
-**Summary:**  
-Built upon the previous implementation of the FHD algorithm to include real image reading and processing capabilities. This version takes an actual image, applies the FHD reconstruction algorithm, and outputs the reconstructed image, demonstrating practical applicability of the CUDA code.
-
-**Learned:**  
+- Implemented optimizations to address common challenges in MRI reconstruction, such as memory bandwidth limitations and computational heavy-lifting.</p>
+<h3>File: <code>cmpFHD_real_image.cu</code></h3>
+<p><strong>Summary:</strong><br />
+Built upon the previous implementation of the FHD algorithm to include real image reading and processing capabilities. This version takes an actual image, applies the FHD reconstruction algorithm, and outputs the reconstructed image, demonstrating practical applicability of the CUDA code.</p>
+<p><strong>Learned:</strong><br />
 - Expanded the previous understanding of memory management and kernel optimization by integrating real-world data processing into the workflow.
-- Familiarized myself with image I/O operations in CUDA, allowing for the handling of real data as input for reconstruction algorithms.
-
-
-### Reading:
-- Completed **Chapter 14** of the PMPP book.  
-  - Delved into the case study of non-Cartesian magnetic resonance imaging, which provided:
-    - Background on the principles and necessities driving advancements in MRI technology.
-    - A comprehensive look at iterative reconstruction techniques that enhance image quality using statistical estimation methods.
-    - Detailed steps on optimizing the kernel parallelism structure to maximize performance and minimize memory constraints in handling MRI data.
-    - Insights into experimental performance tuning, particularly the advantages of leveraging hardware trigonometry functions to achieve rapid computations.
-
----
-
-
-### Day 15
-
-#### File: `flash_attention_backprop.cu`
-**Summary:**  
-Implemented the backpropagation for Flash Attention in CUDA, continuing from the forward pass developed earlier. The backpropagation step computes the gradients required for training the attention mechanism. However, a small issue arose where some of the gradients are outputting as zero at certain points, which will be addressed and fixed in the coming days.
-
-**Learned:**  
+- Familiarized myself with image I/O operations in CUDA, allowing for the handling of real data as input for reconstruction algorithms.</p>
+<h3>Reading:</h3>
+<ul>
+<li>Completed <strong>Chapter 14</strong> of the PMPP book.  </li>
+<li>Delved into the case study of non-Cartesian magnetic resonance imaging, which provided:<ul>
+<li>Background on the principles and necessities driving advancements in MRI technology.</li>
+<li>A comprehensive look at iterative reconstruction techniques that enhance image quality using statistical estimation methods.</li>
+<li>Detailed steps on optimizing the kernel parallelism structure to maximize performance and minimize memory constraints in handling MRI data.</li>
+<li>Insights into experimental performance tuning, particularly the advantages of leveraging hardware trigonometry functions to achieve rapid computations.</li>
+</ul>
+</li>
+</ul>
+<hr />
+<h3>Day 15</h3>
+<h4>File: <code>flash_attention_backprop.cu</code></h4>
+<p><strong>Summary:</strong><br />
+Implemented the backpropagation for Flash Attention in CUDA, continuing from the forward pass developed earlier. The backpropagation step computes the gradients required for training the attention mechanism. However, a small issue arose where some of the gradients are outputting as zero at certain points, which will be addressed and fixed in the coming days.</p>
+<p><strong>Learned:</strong><br />
 - Explored the process of backpropagation in the context of Flash Attention, including the calculation of gradients for the attention weights and input matrices.
 - Worked on integrating gradient calculation with memory optimization techniques to maintain efficiency, consistent with the original forward pass.
-- Identified potential issues related to numerical stability when dealing with gradient flow in CUDA, specifically in the attention layer.
-
----
-
-#### File: `cnn.cu`
-**Summary:**  
-Developed a Convolutional Neural Network (CNN) implementation in CUDA, including both forward and backward passes with pooling layers. Used the unrolling trick for improved performance in the backward pass, optimizing the matrix operations involved.
-
-**Learned:**  
+- Identified potential issues related to numerical stability when dealing with gradient flow in CUDA, specifically in the attention layer.</p>
+<hr />
+<h4>File: <code>cnn.cu</code></h4>
+<p><strong>Summary:</strong><br />
+Developed a Convolutional Neural Network (CNN) implementation in CUDA, including both forward and backward passes with pooling layers. Used the unrolling trick for improved performance in the backward pass, optimizing the matrix operations involved.</p>
+<p><strong>Learned:</strong><br />
 - Implemented the core components of a CNN in CUDA, including convolutions, activations, pooling layers, and backpropagation.
 - Utilized the unrolling trick to optimize it, improving the performance of matrix multiplications and gradient calculations.
-- Gained deeper understanding of the computational requirements for CNN training on GPUs and the importance of efficient memory access patterns and parallelism in deep learning.
-
----
-
-### Reading:  
-- **Chapter 15:** *Application Case Study—Molecular Visualization and Analysis*  
-  - Delved into the background and practical aspects of molecular visualization in parallel computing.  
-  - Learned about the importance of thread granularity adjustments and memory coalescing in visualizing large-scale molecular structures using CUDA.
-
-- **Chapter 16:** *Application Case Study—Machine Learning*  
-  - Focused on Convolutional Neural Networks (ConvNets) and their implementation in CUDA.  
-  - Covered key concepts such as basic layers, backpropagation, and the reduction of convolutional layers to matrix multiplication for optimization.  
-  - Explored the cuDNN library and its use in accelerating deep learning operations.
-
-- **Chapter 17:** *Parallel Programming and Computational Thinking*  
-  - Studied the core principles of parallel computing, including problem decomposition, algorithm selection, and computational thinking.  
-  - Focused on strategies for optimizing memory locality and shared memory usage in parallel applications.
-
----
-### Day 16
-
-#### Code: `NaiveBayes.cu`, `NaiveBayesKernel.cuh`, `NaiveBayesTrain.cuh`, `NaiveBayesTrain.cpp`, and `main.cpp`
-**Summary:**  
-Implemented a CUDA-accelerated Naive Bayes classifier, focusing on the training and inference stages. Leveraging shared memory to maximize computational efficiency, the implementation is structured to divide work among threads for parallelized data processing of feature probabilities.
-
-**Components Developed:**  
-1. **`NaiveBayes.cu`**:  
+- Gained deeper understanding of the computational requirements for CNN training on GPUs and the importance of efficient memory access patterns and parallelism in deep learning.</p>
+<hr />
+<h3>Reading:</h3>
+<ul>
+<li><strong>Chapter 15:</strong> <em>Application Case Study—Molecular Visualization and Analysis</em>  </li>
+<li>Delved into the background and practical aspects of molecular visualization in parallel computing.  </li>
+<li>
+<p>Learned about the importance of thread granularity adjustments and memory coalescing in visualizing large-scale molecular structures using CUDA.</p>
+</li>
+<li>
+<p><strong>Chapter 16:</strong> <em>Application Case Study—Machine Learning</em>  </p>
+</li>
+<li>Focused on Convolutional Neural Networks (ConvNets) and their implementation in CUDA.  </li>
+<li>Covered key concepts such as basic layers, backpropagation, and the reduction of convolutional layers to matrix multiplication for optimization.  </li>
+<li>
+<p>Explored the cuDNN library and its use in accelerating deep learning operations.</p>
+</li>
+<li>
+<p><strong>Chapter 17:</strong> <em>Parallel Programming and Computational Thinking</em>  </p>
+</li>
+<li>Studied the core principles of parallel computing, including problem decomposition, algorithm selection, and computational thinking.  </li>
+<li>Focused on strategies for optimizing memory locality and shared memory usage in parallel applications.</li>
+</ul>
+<hr />
+<h3>Day 16</h3>
+<h4>Code: <code>NaiveBayes.cu</code>, <code>NaiveBayesKernel.cuh</code>, <code>NaiveBayesTrain.cuh</code>, <code>NaiveBayesTrain.cpp</code>, and <code>main.cpp</code></h4>
+<p><strong>Summary:</strong><br />
+Implemented a CUDA-accelerated Naive Bayes classifier, focusing on the training and inference stages. Leveraging shared memory to maximize computational efficiency, the implementation is structured to divide work among threads for parallelized data processing of feature probabilities.</p>
+<p><strong>Components Developed:</strong><br />
+1. <strong><code>NaiveBayes.cu</code></strong>:<br />
    - This file contains the CUDA kernel responsible for calculating feature likelihoods and class probabilities in parallel. Shared memory was used where possible to minimize global memory access penalties.
-   - Optimized kernel launches to balance between grid and block dimensions for datasets with high dimensionality. 
-   
-2. **`NaiveBayesKernel.cuh`**:  
-   - Header file declaring the kernel functions, ensuring modularity and separation of concerns in code structure.    
-
-3. **`NaiveBayesTrain.cuh`**:  
-   - Declared the host-side training function, encapsulating the logic to copy data to the GPU, launch CUDA kernels, and retrieve results.  
-
-4. **`NaiveBayesTrain.cpp`**:  
-   - Implemented the host-side training process, providing pre-processing for input data and managing memory transfers between CPU and GPU.
-  
-5. **`main.cpp`**:  
-   - Entry point of the program, performing tasks like loading data, splitting datasets for training and testing, and evaluating model performance after training.  
-
----
-
-#### Blog Update  
-- Updated My blog with an important information about using NVCC in Colab. 
-  - Link: [Learning CUDA with a Weak GPU (or No GPU at All)](https://hamdi.bearblog.dev/learning-cuda-with-a-weak-gpu-or-no-gpu-at-all-yes-you-can/)
-
----
-
-### Day 17
-
-#### Code: `vec_cublas.cu`
-**Summary:**  
-Today, I implemented vector addition using the cuBLAS library in CUDA. By leveraging the optimized linear algebra routines provided by cuBLAS, this implementation achieves highly efficient computation of the vector addition operation `C = A + B` for two input vectors `A` and `B`. The addition was performed using the `cublasSaxpy` function, which computes scaled vector addition.
-
-**Key Concepts Implemented:**  
-- Used the `cublasSaxpy` function to perform the vector addition in the format `C = alpha * A + B` where `alpha` is a scaling factor. In this case, `alpha` was set to `1.0` to achieve the simple addition of `A` and `B`.
-- Managed the cuBLAS library handle for the operation.
-
----
-
-**Learned:**  
-- **cuBLAS Basics:**  
-  - Gained an introduction to the cuBLAS library and its capabilities for high-performance linear algebra operations.  
-  - Learned how to use cuBLAS functions like `cublasSaxpy` for vector addition and understood its parameters.  
-
-- **cuBLAS Handle Management:**  
-  - Understood how to create and destroy a cuBLAS handle using `cublasCreate` and `cublasDestroy`. This is critical for managing state across cuBLAS calls.
-
-- **Functionality of `cublasSaxpy`:**  
-  - Reviewed the underlying algorithm and implementation of the AXPY operation, which computes `y = a*x + y` for real vectors `x` and `y` and scalar `a`.
-
----
+   - Optimized kernel launches to balance between grid and block dimensions for datasets with high dimensionality. </p>
+<ol>
+<li><strong><code>NaiveBayesKernel.cuh</code></strong>:  </li>
+<li>
+<p>Header file declaring the kernel functions, ensuring modularity and separation of concerns in code structure.    </p>
+</li>
+<li>
+<p><strong><code>NaiveBayesTrain.cuh</code></strong>:  </p>
+</li>
+<li>
+<p>Declared the host-side training function, encapsulating the logic to copy data to the GPU, launch CUDA kernels, and retrieve results.  </p>
+</li>
+<li>
+<p><strong><code>NaiveBayesTrain.cpp</code></strong>:  </p>
+</li>
+<li>
+<p>Implemented the host-side training process, providing pre-processing for input data and managing memory transfers between CPU and GPU.</p>
+</li>
+<li>
+<p><strong><code>main.cpp</code></strong>:  </p>
+</li>
+<li>Entry point of the program, performing tasks like loading data, splitting datasets for training and testing, and evaluating model performance after training.  </li>
+</ol>
+<hr />
+<h4>Blog Update</h4>
+<ul>
+<li>Updated My blog with an important information about using NVCC in Colab. </li>
+<li>Link: <a href="https://hamdi.bearblog.dev/learning-cuda-with-a-weak-gpu-or-no-gpu-at-all-yes-you-can/">Learning CUDA with a Weak GPU (or No GPU at All)</a></li>
+</ul>
+<hr />
+<h3>Day 17</h3>
+<h4>Code: <code>vec_cublas.cu</code></h4>
+<p><strong>Summary:</strong><br />
+Today, I implemented vector addition using the cuBLAS library in CUDA. By leveraging the optimized linear algebra routines provided by cuBLAS, this implementation achieves highly efficient computation of the vector addition operation <code>C = A + B</code> for two input vectors <code>A</code> and <code>B</code>. The addition was performed using the <code>cublasSaxpy</code> function, which computes scaled vector addition.</p>
+<p><strong>Key Concepts Implemented:</strong><br />
+- Used the <code>cublasSaxpy</code> function to perform the vector addition in the format <code>C = alpha * A + B</code> where <code>alpha</code> is a scaling factor. In this case, <code>alpha</code> was set to <code>1.0</code> to achieve the simple addition of <code>A</code> and <code>B</code>.
+- Managed the cuBLAS library handle for the operation.</p>
+<hr />
+<p><strong>Learned:</strong><br />
+- <strong>cuBLAS Basics:</strong><br />
+  - Gained an introduction to the cuBLAS library and its capabilities for high-performance linear algebra operations.<br />
+  - Learned how to use cuBLAS functions like <code>cublasSaxpy</code> for vector addition and understood its parameters.  </p>
+<ul>
+<li><strong>cuBLAS Handle Management:</strong>  </li>
+<li>
+<p>Understood how to create and destroy a cuBLAS handle using <code>cublasCreate</code> and <code>cublasDestroy</code>. This is critical for managing state across cuBLAS calls.</p>
+</li>
+<li>
+<p><strong>Functionality of <code>cublasSaxpy</code>:</strong>  </p>
+</li>
+<li>Reviewed the underlying algorithm and implementation of the AXPY operation, which computes <code>y = a*x + y</code> for real vectors <code>x</code> and <code>y</code> and scalar <code>a</code>.</li>
+</ul>
+<hr />
             </div>
         </div>
         

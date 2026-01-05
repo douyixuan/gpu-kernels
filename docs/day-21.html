@@ -163,31 +163,35 @@
         <div class="description">
             <h2>Description</h2>
             <div class="desc-content">
-### File: `cuda_sgc.cu`
-**Summary:**  
-Implemented a Stochastic Gradient Descent (SGD) algorithm in CUDA, focusing on optimizing calculations via shared memory and other performance tricks. This implementation is designed for linear regression, consisting of weight and bias updates, where the effectiveness of using CUDA's parallel computation capabilities significantly enhances the training speed.
-
-**Key Components:**
-1. **Compute Loss:**  
-   - The kernel `compute_loss` calculates the predictions and corresponding squared loss for each data point. The predictions are calculated using an input matrix `X`, weights `W`, and bias `b`.
-
-2. **Compute Gradients:**  
-   - The `compute_gradients` kernel computes the gradients of the loss with respect to weights and bias. It uses shared memory (`db_shared`) for the computation of bias gradients, reducing global memory access and improving performance.
-
-3. **Update Weights:**  
-   - The `update_weights` kernel updates the weights and bias based on the calculated gradients and the learning rate.
-
-4. **Training Function:**  
-   - `train_sgd` orchestrates the memory management, kernel launches, and data transfers between host and device for the entire training loop over a specified number of epochs.
-
----
-
-
-### Reading:
-- Continued the exploration of optimization techniques for CUDA applications, focusing on strategies for improving kernel performance and reducing latency.
-- Reviewed literature on best practices for applying SGD and other optimization algorithms in machine learning frameworks, considering both theoretical and practical aspects.
-
----
+<h3>File: <code>cuda_sgc.cu</code></h3>
+<p><strong>Summary:</strong><br />
+Implemented a Stochastic Gradient Descent (SGD) algorithm in CUDA, focusing on optimizing calculations via shared memory and other performance tricks. This implementation is designed for linear regression, consisting of weight and bias updates, where the effectiveness of using CUDA's parallel computation capabilities significantly enhances the training speed.</p>
+<p><strong>Key Components:</strong>
+1. <strong>Compute Loss:</strong><br />
+   - The kernel <code>compute_loss</code> calculates the predictions and corresponding squared loss for each data point. The predictions are calculated using an input matrix <code>X</code>, weights <code>W</code>, and bias <code>b</code>.</p>
+<ol>
+<li><strong>Compute Gradients:</strong>  </li>
+<li>
+<p>The <code>compute_gradients</code> kernel computes the gradients of the loss with respect to weights and bias. It uses shared memory (<code>db_shared</code>) for the computation of bias gradients, reducing global memory access and improving performance.</p>
+</li>
+<li>
+<p><strong>Update Weights:</strong>  </p>
+</li>
+<li>
+<p>The <code>update_weights</code> kernel updates the weights and bias based on the calculated gradients and the learning rate.</p>
+</li>
+<li>
+<p><strong>Training Function:</strong>  </p>
+</li>
+<li><code>train_sgd</code> orchestrates the memory management, kernel launches, and data transfers between host and device for the entire training loop over a specified number of epochs.</li>
+</ol>
+<hr />
+<h3>Reading:</h3>
+<ul>
+<li>Continued the exploration of optimization techniques for CUDA applications, focusing on strategies for improving kernel performance and reducing latency.</li>
+<li>Reviewed literature on best practices for applying SGD and other optimization algorithms in machine learning frameworks, considering both theoretical and practical aspects.</li>
+</ul>
+<hr />
             </div>
         </div>
         

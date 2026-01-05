@@ -163,43 +163,37 @@
         <div class="description">
             <h2>Description</h2>
             <div class="desc-content">
-### File: `one_d_convolution.cu`
-**Summary:**  
-Implemented a simple 1D convolution algorithm using CUDA. This involved sliding a kernel (or filter) over an input array and computing the weighted sum of elements. Each thread was assigned to compute the convolution at a specific position in the output array.  
-
-**Learned:**  
+<h3>File: <code>one_d_convolution.cu</code></h3>
+<p><strong>Summary:</strong><br />
+Implemented a simple 1D convolution algorithm using CUDA. This involved sliding a kernel (or filter) over an input array and computing the weighted sum of elements. Each thread was assigned to compute the convolution at a specific position in the output array.  </p>
+<p><strong>Learned:</strong><br />
 - Basics of 1D convolution in parallel, including mapping threads to positions in the output array.
 - How to handle boundary conditions (halo cells) when the kernel partially overlaps the input array bounds.
-- Importance of memory layout and contiguous access for kernel weights and input arrays to maximize performance.
-
----
-
-### File: `one_d_convolution_with_tiling.cu`
-**Summary:**  
-Implemented an optimized version of the 1D convolution algorithm using tiling and shared memory. Divided the input array into tiles and loaded data into shared memory, minimizing global memory accesses for better performance. Used halo cells to handle edge cases where kernel overlap extended into neighboring tiles.  
-
-**Learned:**  
+- Importance of memory layout and contiguous access for kernel weights and input arrays to maximize performance.</p>
+<hr />
+<h3>File: <code>one_d_convolution_with_tiling.cu</code></h3>
+<p><strong>Summary:</strong><br />
+Implemented an optimized version of the 1D convolution algorithm using tiling and shared memory. Divided the input array into tiles and loaded data into shared memory, minimizing global memory accesses for better performance. Used halo cells to handle edge cases where kernel overlap extended into neighboring tiles.  </p>
+<p><strong>Learned:</strong><br />
 - Tiling in CUDA: Dividing input data into manageable chunks and leveraging shared memory to reduce global memory latency.
-- Use of **halo cells** to ensure correctness at tile boundaries during convolution.
+- Use of <strong>halo cells</strong> to ensure correctness at tile boundaries during convolution.
 - How to balance computation and memory usage in tiled algorithms to improve performance.
-- Proper synchronization of threads within a block (using `__syncthreads()`) to ensure data consistency in shared memory.
-
----
-### File: `2d_convolution_with_tiling.cu`  
-**Summary:**  
-Implemented a 2D convolution algorithm with tiling optimization using CUDA. Divided the input matrix into tiles and leveraged shared memory to minimize global memory accesses, ensuring efficient computation of the convolution kernel across the matrix. Handled boundary conditions using halo cells to process edges and corners correctly.  
-
-**Learned:**  
-- Extended tiling techniques from 1D to 2D data structures for efficient parallel computation.  
-- Optimized global memory access by using shared memory for each tile.  
-- Synchronization of threads for consistent shared memory usage within a block (`__syncthreads()` for proper execution order).  
-- Efficient handling of edge cases and boundary cells in 2D convolution.  
-
---- 
-
-### Reading:  
-- Read **Chapter 7** of the PMPP book.  
-  - Learned about parallel patterns for convolution, including basic algorithms, memory optimizations with constant and shared memory, and tiling techniques with halo cells for 1D and 2D convolution.
+- Proper synchronization of threads within a block (using <code>__syncthreads()</code>) to ensure data consistency in shared memory.</p>
+<hr />
+<h3>File: <code>2d_convolution_with_tiling.cu</code></h3>
+<p><strong>Summary:</strong><br />
+Implemented a 2D convolution algorithm with tiling optimization using CUDA. Divided the input matrix into tiles and leveraged shared memory to minimize global memory accesses, ensuring efficient computation of the convolution kernel across the matrix. Handled boundary conditions using halo cells to process edges and corners correctly.  </p>
+<p><strong>Learned:</strong><br />
+- Extended tiling techniques from 1D to 2D data structures for efficient parallel computation.<br />
+- Optimized global memory access by using shared memory for each tile.<br />
+- Synchronization of threads for consistent shared memory usage within a block (<code>__syncthreads()</code> for proper execution order).<br />
+- Efficient handling of edge cases and boundary cells in 2D convolution.  </p>
+<hr />
+<h3>Reading:</h3>
+<ul>
+<li>Read <strong>Chapter 7</strong> of the PMPP book.  </li>
+<li>Learned about parallel patterns for convolution, including basic algorithms, memory optimizations with constant and shared memory, and tiling techniques with halo cells for 1D and 2D convolution.</li>
+</ul>
             </div>
         </div>
         

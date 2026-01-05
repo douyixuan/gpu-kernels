@@ -163,45 +163,44 @@
         <div class="description">
             <h2>Description</h2>
             <div class="desc-content">
-### Files: `sparse_gemm.cpp`, `strassen.cpp`, `winograd.cpp`, `utils.cpp`
-**Summary:**  
-Implemented and compared different matrix multiplication algorithms for both dense and sparse matrices using HIP/ROCm in AMD gpus. The comparison included:
-
-1. Dense Matrix Algorithms:
-   - rocBLAS (vendor-optimized library)
-   - Winograd's algorithm
-   - Strassen's algorithm 
-
-2. Sparse Matrix Algorithms:
-   - rocSPARSE (vendor-optimized library)
-   - CSR (Compressed Sparse Row)
-   - COO (Coordinate format)
-   - Block-CSR (Block Compressed Sparse Row)
-
-**Benchmark Results:**  
+<h3>Files: <code>sparse_gemm.cpp</code>, <code>strassen.cpp</code>, <code>winograd.cpp</code>, <code>utils.cpp</code></h3>
+<p><strong>Summary:</strong><br />
+Implemented and compared different matrix multiplication algorithms for both dense and sparse matrices using HIP/ROCm in AMD gpus. The comparison included:</p>
+<ol>
+<li>Dense Matrix Algorithms:</li>
+<li>rocBLAS (vendor-optimized library)</li>
+<li>Winograd's algorithm</li>
+<li>
+<p>Strassen's algorithm </p>
+</li>
+<li>
+<p>Sparse Matrix Algorithms:</p>
+</li>
+<li>rocSPARSE (vendor-optimized library)</li>
+<li>CSR (Compressed Sparse Row)</li>
+<li>COO (Coordinate format)</li>
+<li>Block-CSR (Block Compressed Sparse Row)</li>
+</ol>
+<p><strong>Benchmark Results:</strong><br />
 Dense Matrix Multiplication (N=256):
 - rocBLAS: 0.75 GFLOPS
-- Winograd: 2279.51 GFLOPS 
-
-Dense Matrix Multiplication (N=512):
+- Winograd: 2279.51 GFLOPS </p>
+<p>Dense Matrix Multiplication (N=512):
 - rocBLAS: 3232.60 GFLOPS
-- Winograd: 52428.80 GFLOPS 
-
-Sparse Matrix Multiplication (N=256, density=0.1) :
+- Winograd: 52428.80 GFLOPS </p>
+<p>Sparse Matrix Multiplication (N=256, density=0.1) :
 - rocBLAS: 842.23 GFLOPS
 - rocSPARSE: 0.07 GFLOPS
 - CSR: 633.50 GFLOPS
 - COO: 655.30 GFLOPS
-- Block-CSR: 819.20 GFLOPS
-
-Sparse Matrix Multiplication (N=512, density=0.1):
+- Block-CSR: 819.20 GFLOPS</p>
+<p>Sparse Matrix Multiplication (N=512, density=0.1):
 - rocBLAS: 4042.70 GFLOPS
 - rocSPARSE: 309.42 GFLOPS
 - CSR: 5091.30 GFLOPS
 - COO: 5083.93 GFLOPS
-- Block-CSR: 4505.60 GFLOPS
-
-**Findings:**
+- Block-CSR: 4505.60 GFLOPS</p>
+<p><strong>Findings:</strong>
 1. Winograd's algorithm shows impressive performance for small matrices but faces accuracy challenges at larger sizes
 2. rocBLAS performance scales well with matrix size for dense operations
 3. Our custom sparse implementations significantly outperform rocSPARSE:
@@ -212,362 +211,11 @@ Sparse Matrix Multiplication (N=512, density=0.1):
    - Custom CSR achieves best performance at 5091.30 GFLOPS
    - COO follows closely at 5083.93 GFLOPS
    - Block-CSR shows good performance at 4505.60 GFLOPS
-   - All custom implementations outperform both rocBLAS and rocSPARSE (for those tests, bigger matrices benchmarking is neededed)
+   - All custom implementations outperform both rocBLAS and rocSPARSE (for those tests, bigger matrices benchmarking is neededed)</p>
             </div>
         </div>
         
         <h2 style="margin-bottom: 1rem; color: #667eea;">Code Files</h2>
-
-    <div class="file-section">
-        <h3>sparse_gemm.cpp</h3>
-        <pre><code class="language-cpp">#include "matrix_mult.h"
-#include &lt;hip/hip_runtime.h&gt;
-#include &lt;chrono&gt;
-
-// Define HIP_CHECK macro for error handling
-#define HIP_CHECK(call) do {                                                        \
-    hipError_t err = call;                                                         \
-    if (err != hipSuccess) {                                                       \
-        printf("HIP error %s:%d: '%s'\n", __FILE__, __LINE__,                     \
-               hipGetErrorString(err));                                            \
-        exit(1);                                                                   \
-    }                                                                              \
-} while(0)
-
-// CSR SpMM kernel
-__global__ void spmm_csr_kernel(const float* values, const int* row_ptr, 
-                               const int* col_indices, const float* B, float* C,
-                               int M, int K, int N) {
-    int row = blockIdx.x * blockDim.x + threadIdx.x;
-    if (row &lt; M) {
-        for (int col = 0; col &lt; N; col++) {
-            float sum = 0.0f;
-            for (int i = row_ptr[row]; i &lt; row_ptr[row + 1]; i++) {
-                int k = col_indices[i];
-                sum += values[i] * B[k * N + col];
-            }
-            C[row * N + col] = sum;
-        }
-    }
-}
-
-// COO SpMM kernel
-__global__ void spmm_coo_kernel(const float* values, const int* row_indices,
-                               const int* col_indices, const float* B, float* C,
-                               int nnz, int M) {
-    int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx &lt; nnz) {
-        int row = row_indices[idx];
-        int col = col_indices[idx];
-        float val = values[idx];
-        
-        for (int j = 0; j &lt; M; j++) {
-            atomicAdd(&amp;C[row * M + j], val * B[col * M + j]);
-        }
-    }
-}
-
-// Block-CSR SpMM kernel
-__global__ void spmm_block_csr_kernel(const float* values, const int* row_ptr,
-                                     const int* col_indices, const float* B, float* C,
-                                     int N, int K, int M, int block_size) {
-    int row_block = blockIdx.x;
-    int thread_id = threadIdx.x;
-    
-    __shared__ float shared_B[32][32];  // Assuming max block size of 32
-    
-    int row = row_block * block_size;
-    if (row &lt; N) {
-        for (int col = 0; col &lt; M; col += block_size) {
-            // Load block of matrix B into shared memory
-            if (col + thread_id &lt; M &amp;&amp; thread_id &lt; block_size) {
-                for (int k = row_ptr[row_block]; k &lt; row_ptr[row_block + 1]; k++) {
-                    int col_block = col_indices[k] * block_size;
-                    shared_B[thread_id][0] = B[(col_block + thread_id) * M + col];
-                }
-            }
-            __syncthreads();
-            
-            // Compute block multiplication
-            if (thread_id &lt; block_size &amp;&amp; row + thread_id &lt; N &amp;&amp; col &lt; M) {
-                float sum = 0.0f;
-                for (int k = row_ptr[row_block]; k &lt; row_ptr[row_block + 1]; k++) {
-                    int val_idx = k * block_size * block_size + thread_id;
-                    sum += values[val_idx] * shared_B[thread_id][0];
-                }
-                C[(row + thread_id) * M + col] = sum;
-            }
-            __syncthreads();
-        }
-    }
-}
-
-PerfResult sparse_gemm_csr(const CSRMatrix&amp; A, const float* B, float* C,
-                          int M, int K, int N) {
-    float *d_values, *d_B, *d_C;
-    int *d_row_ptr, *d_col_indices;
-    
-    // Get number of non-zero elements
-    int nnz = A.values.size();
-    
-    // Allocate device memory
-    HIP_CHECK(hipMalloc(&amp;d_values, A.values.size() * sizeof(float)));
-    HIP_CHECK(hipMalloc(&amp;d_row_ptr, A.row_ptr.size() * sizeof(int)));
-    HIP_CHECK(hipMalloc(&amp;d_col_indices, A.col_indices.size() * sizeof(int)));
-    HIP_CHECK(hipMalloc(&amp;d_B, K * N * sizeof(float)));
-    HIP_CHECK(hipMalloc(&amp;d_C, M * N * sizeof(float)));
-    
-    // Copy data to device
-    HIP_CHECK(hipMemcpy(d_values, A.values.data(), A.values.size() * sizeof(float), hipMemcpyHostToDevice));
-    HIP_CHECK(hipMemcpy(d_row_ptr, A.row_ptr.data(), A.row_ptr.size() * sizeof(int), hipMemcpyHostToDevice));
-    HIP_CHECK(hipMemcpy(d_col_indices, A.col_indices.data(), A.col_indices.size() * sizeof(int), hipMemcpyHostToDevice));
-    HIP_CHECK(hipMemcpy(d_B, B, K * N * sizeof(float), hipMemcpyHostToDevice));
-    
-    // Initialize C with zeros
-    HIP_CHECK(hipMemset(d_C, 0, M * N * sizeof(float)));
-    
-    // Set up timing
-    hipEvent_t start, stop;
-    HIP_CHECK(hipEventCreate(&amp;start));
-    HIP_CHECK(hipEventCreate(&amp;stop));
-    
-    // Launch kernel
-    dim3 block(256);
-    dim3 grid((M + block.x - 1) / block.x);
-    
-    HIP_CHECK(hipEventRecord(start));
-    hipLaunchKernelGGL(spmm_csr_kernel, grid, block, 0, nullptr,
-                       d_values, d_row_ptr, d_col_indices, d_B, d_C, M, K, N);
-    HIP_CHECK(hipEventRecord(stop));
-    HIP_CHECK(hipEventSynchronize(stop));
-    
-    float milliseconds = 0;
-    HIP_CHECK(hipEventElapsedTime(&amp;milliseconds, start, stop));
-    
-    // Copy result back to host
-    HIP_CHECK(hipMemcpy(C, d_C, M * N * sizeof(float), hipMemcpyDeviceToHost));
-    
-    // Calculate performance metrics
-    double gflops = (2.0 * nnz * N) / (milliseconds * 1e6);
-    
-    // Cleanup
-    HIP_CHECK(hipFree(d_values));
-    HIP_CHECK(hipFree(d_row_ptr));
-    HIP_CHECK(hipFree(d_col_indices));
-    HIP_CHECK(hipFree(d_B));
-    HIP_CHECK(hipFree(d_C));
-    HIP_CHECK(hipEventDestroy(start));
-    HIP_CHECK(hipEventDestroy(stop));
-    
-    return {milliseconds, gflops, "CSR", 0.0};
-}
-
-PerfResult sparse_gemm_coo(const COOMatrix&amp; A, const float* B, float* C,
-                          int M, int K, int N) {
-    float *d_values, *d_B, *d_C;
-    int *d_row_indices, *d_col_indices;
-    
-    // Allocate device memory
-    HIP_CHECK(hipMalloc(&amp;d_values, A.values.size() * sizeof(float)));
-    HIP_CHECK(hipMalloc(&amp;d_row_indices, A.row_indices.size() * sizeof(int)));
-    HIP_CHECK(hipMalloc(&amp;d_col_indices, A.col_indices.size() * sizeof(int)));
-    HIP_CHECK(hipMalloc(&amp;d_B, K * N * sizeof(float)));
-    HIP_CHECK(hipMalloc(&amp;d_C, M * N * sizeof(float)));
-    
-    // Copy data to device
-    HIP_CHECK(hipMemcpy(d_values, A.values.data(), A.values.size() * sizeof(float), hipMemcpyHostToDevice));
-    HIP_CHECK(hipMemcpy(d_row_indices, A.row_indices.data(), A.row_indices.size() * sizeof(int), hipMemcpyHostToDevice));
-    HIP_CHECK(hipMemcpy(d_col_indices, A.col_indices.data(), A.col_indices.size() * sizeof(int), hipMemcpyHostToDevice));
-    HIP_CHECK(hipMemcpy(d_B, B, K * N * sizeof(float), hipMemcpyHostToDevice));
-    
-    // Initialize C with zeros
-    HIP_CHECK(hipMemset(d_C, 0, M * N * sizeof(float)));
-    
-    // Set up timing
-    hipEvent_t start, stop;
-    HIP_CHECK(hipEventCreate(&amp;start));
-    HIP_CHECK(hipEventCreate(&amp;stop));
-    
-    // Launch kernel
-    dim3 block(256);
-    dim3 grid((A.nnz + block.x - 1) / block.x);
-    
-    HIP_CHECK(hipEventRecord(start));
-    hipLaunchKernelGGL(spmm_coo_kernel, grid, block, 0, nullptr,
-                       d_values, d_row_indices, d_col_indices, d_B, d_C, A.nnz, M);
-    HIP_CHECK(hipEventRecord(stop));
-    HIP_CHECK(hipEventSynchronize(stop));
-    
-    float milliseconds = 0;
-    HIP_CHECK(hipEventElapsedTime(&amp;milliseconds, start, stop));
-    
-    // Copy result back to host
-    HIP_CHECK(hipMemcpy(C, d_C, M * N * sizeof(float), hipMemcpyDeviceToHost));
-    
-    // Calculate performance metrics
-    double gflops = (2.0 * A.nnz * N) / (milliseconds * 1e6);
-    
-    // Cleanup
-    HIP_CHECK(hipFree(d_values));
-    HIP_CHECK(hipFree(d_row_indices));
-    HIP_CHECK(hipFree(d_col_indices));
-    HIP_CHECK(hipFree(d_B));
-    HIP_CHECK(hipFree(d_C));
-    HIP_CHECK(hipEventDestroy(start));
-    HIP_CHECK(hipEventDestroy(stop));
-    
-    return {milliseconds, gflops, "COO", 0.0};
-}
-
-PerfResult sparse_gemm_block_csr(const BlockCSRMatrix&amp; A, const float* B, float* C,
-                                int M, int K, int N) {
-    float *d_values, *d_B, *d_C;
-    int *d_row_ptr, *d_col_indices;
-    
-    // Calculate nnz for Block-CSR
-    int nnz = A.values.size() / (A.block_size * A.block_size);
-    
-    // Allocate device memory
-    HIP_CHECK(hipMalloc(&amp;d_values, A.values.size() * sizeof(float)));
-    HIP_CHECK(hipMalloc(&amp;d_row_ptr, A.row_ptr.size() * sizeof(int)));
-    HIP_CHECK(hipMalloc(&amp;d_col_indices, A.col_indices.size() * sizeof(int)));
-    HIP_CHECK(hipMalloc(&amp;d_B, K * N * sizeof(float)));
-    HIP_CHECK(hipMalloc(&amp;d_C, M * N * sizeof(float)));
-    
-    // Copy data to device
-    HIP_CHECK(hipMemcpy(d_values, A.values.data(), A.values.size() * sizeof(float), hipMemcpyHostToDevice));
-    HIP_CHECK(hipMemcpy(d_row_ptr, A.row_ptr.data(), A.row_ptr.size() * sizeof(int), hipMemcpyHostToDevice));
-    HIP_CHECK(hipMemcpy(d_col_indices, A.col_indices.data(), A.col_indices.size() * sizeof(int), hipMemcpyHostToDevice));
-    HIP_CHECK(hipMemcpy(d_B, B, K * N * sizeof(float), hipMemcpyHostToDevice));
-    
-    // Initialize C with zeros
-    HIP_CHECK(hipMemset(d_C, 0, M * N * sizeof(float)));
-    
-    // Set up timing
-    hipEvent_t start, stop;
-    HIP_CHECK(hipEventCreate(&amp;start));
-    HIP_CHECK(hipEventCreate(&amp;stop));
-    
-    // Launch kernel
-    dim3 block(A.block_size * A.block_size);
-    dim3 grid((N + A.block_size - 1) / A.block_size);
-    
-    HIP_CHECK(hipEventRecord(start));
-    hipLaunchKernelGGL(spmm_block_csr_kernel, grid, block, 0, nullptr,
-                       d_values, d_row_ptr, d_col_indices, d_B, d_C,
-                       N, K, M, A.block_size);
-    HIP_CHECK(hipEventRecord(stop));
-    HIP_CHECK(hipEventSynchronize(stop));
-    
-    float milliseconds = 0;
-    HIP_CHECK(hipEventElapsedTime(&amp;milliseconds, start, stop));
-    
-    // Copy result back to host
-    HIP_CHECK(hipMemcpy(C, d_C, M * N * sizeof(float), hipMemcpyDeviceToHost));
-    
-    // Calculate performance metrics
-    double gflops = (2.0 * nnz * A.block_size * A.block_size * N) / (milliseconds * 1e6);
-    
-    // Cleanup
-    HIP_CHECK(hipFree(d_values));
-    HIP_CHECK(hipFree(d_row_ptr));
-    HIP_CHECK(hipFree(d_col_indices));
-    HIP_CHECK(hipFree(d_B));
-    HIP_CHECK(hipFree(d_C));
-    HIP_CHECK(hipEventDestroy(start));
-    HIP_CHECK(hipEventDestroy(stop));
-    
-    return {milliseconds, gflops, "Block-CSR", 0.0};
-} </code></pre>
-    </div>
-
-    <div class="file-section">
-        <h3>matrix_mult.h</h3>
-        <pre><code class="language-c">#pragma once
-
-#include &lt;hip/hip_runtime.h&gt;
-#include &lt;rocblas/rocblas.h&gt;
-#include &lt;vector&gt;
-#include &lt;string&gt;
-
-// Sparse matrix formats
-enum class SparseFormat {
-    CSR,
-    COO,
-    BLOCK_CSR
-};
-
-// Structure for sparse matrix in CSR format
-struct CSRMatrix {
-    std::vector&lt;float&gt; values;     // Non-zero values
-    std::vector&lt;int&gt; row_ptr;      // Row pointers
-    std::vector&lt;int&gt; col_indices;  // Column indices
-    int rows;
-    int cols;
-    int nnz;  // Number of non-zero elements
-
-    CSRMatrix(int r, int c) : rows(r), cols(c), nnz(0) {
-        row_ptr.resize(r + 1, 0);
-    }
-};
-
-// Structure for sparse matrix in COO format
-struct COOMatrix {
-    std::vector&lt;float&gt; values;     // Non-zero values
-    std::vector&lt;int&gt; row_indices;  // Row indices
-    std::vector&lt;int&gt; col_indices;  // Column indices
-    int rows;
-    int cols;
-    int nnz;  // Number of non-zero elements
-
-    COOMatrix(int r, int c) : rows(r), cols(c), nnz(0) {}
-};
-
-// Structure for sparse matrix in Block-CSR format
-struct BlockCSRMatrix {
-    std::vector&lt;float&gt; values;     // Non-zero blocks
-    std::vector&lt;int&gt; row_ptr;      // Row pointers
-    std::vector&lt;int&gt; col_indices;  // Column indices
-    int rows;
-    int cols;
-    int block_size;                // Size of each block
-
-    BlockCSRMatrix(int r, int c, int bs) : rows(r), cols(c), block_size(bs) {
-        int block_rows = (r + bs - 1) / bs;
-        row_ptr.resize(block_rows + 1, 0);
-    }
-};
-
-// Performance result structure
-struct PerfResult {
-    double time_ms;        // Execution time in milliseconds
-    double gflops;         // Performance in GFLOPS
-    std::string format;    // Format or algorithm used
-    double max_diff;       // Maximum difference from reference
-};
-
-// Function declarations for sparse GEMM
-PerfResult sparse_gemm_csr(const CSRMatrix&amp; A, const float* B, float* C, int N, int K, int M);
-PerfResult sparse_gemm_coo(const COOMatrix&amp; A, const float* B, float* C, int N, int K, int M);
-PerfResult sparse_gemm_block_csr(const BlockCSRMatrix&amp; A, const float* B, float* C, int N, int K, int M);
-
-// Function declarations for Strassen algorithm
-PerfResult strassen_multiply(const float* A, const float* B, float* C, int N);
-
-// Function declarations for Winograd algorithm
-PerfResult winograd_multiply(const float* A, const float* B, float* C, int N);
-
-// Function declarations for rocBLAS reference implementation
-PerfResult rocblas_sgemm_ref(const float* A, const float* B, float* C, int N, int K, int M);
-
-// Utility functions
-void generate_random_sparse_matrix(CSRMatrix&amp; mat, float density);
-void generate_random_sparse_matrix(COOMatrix&amp; mat, float density);
-void generate_random_sparse_matrix(BlockCSRMatrix&amp; mat, float density);
-void generate_random_matrix(float* mat, int rows, int cols);
-double compare_matrices(const float* A, const float* B, int rows, int cols);
-void print_performance_results(const std::vector&lt;PerfResult&gt;&amp; results); </code></pre>
-    </div>
 
     <div class="file-section">
         <h3>winograd.cpp</h3>
@@ -1253,6 +901,357 @@ int main() {
     }
 
     return 0;
+} </code></pre>
+    </div>
+
+    <div class="file-section">
+        <h3>matrix_mult.h</h3>
+        <pre><code class="language-c">#pragma once
+
+#include &lt;hip/hip_runtime.h&gt;
+#include &lt;rocblas/rocblas.h&gt;
+#include &lt;vector&gt;
+#include &lt;string&gt;
+
+// Sparse matrix formats
+enum class SparseFormat {
+    CSR,
+    COO,
+    BLOCK_CSR
+};
+
+// Structure for sparse matrix in CSR format
+struct CSRMatrix {
+    std::vector&lt;float&gt; values;     // Non-zero values
+    std::vector&lt;int&gt; row_ptr;      // Row pointers
+    std::vector&lt;int&gt; col_indices;  // Column indices
+    int rows;
+    int cols;
+    int nnz;  // Number of non-zero elements
+
+    CSRMatrix(int r, int c) : rows(r), cols(c), nnz(0) {
+        row_ptr.resize(r + 1, 0);
+    }
+};
+
+// Structure for sparse matrix in COO format
+struct COOMatrix {
+    std::vector&lt;float&gt; values;     // Non-zero values
+    std::vector&lt;int&gt; row_indices;  // Row indices
+    std::vector&lt;int&gt; col_indices;  // Column indices
+    int rows;
+    int cols;
+    int nnz;  // Number of non-zero elements
+
+    COOMatrix(int r, int c) : rows(r), cols(c), nnz(0) {}
+};
+
+// Structure for sparse matrix in Block-CSR format
+struct BlockCSRMatrix {
+    std::vector&lt;float&gt; values;     // Non-zero blocks
+    std::vector&lt;int&gt; row_ptr;      // Row pointers
+    std::vector&lt;int&gt; col_indices;  // Column indices
+    int rows;
+    int cols;
+    int block_size;                // Size of each block
+
+    BlockCSRMatrix(int r, int c, int bs) : rows(r), cols(c), block_size(bs) {
+        int block_rows = (r + bs - 1) / bs;
+        row_ptr.resize(block_rows + 1, 0);
+    }
+};
+
+// Performance result structure
+struct PerfResult {
+    double time_ms;        // Execution time in milliseconds
+    double gflops;         // Performance in GFLOPS
+    std::string format;    // Format or algorithm used
+    double max_diff;       // Maximum difference from reference
+};
+
+// Function declarations for sparse GEMM
+PerfResult sparse_gemm_csr(const CSRMatrix&amp; A, const float* B, float* C, int N, int K, int M);
+PerfResult sparse_gemm_coo(const COOMatrix&amp; A, const float* B, float* C, int N, int K, int M);
+PerfResult sparse_gemm_block_csr(const BlockCSRMatrix&amp; A, const float* B, float* C, int N, int K, int M);
+
+// Function declarations for Strassen algorithm
+PerfResult strassen_multiply(const float* A, const float* B, float* C, int N);
+
+// Function declarations for Winograd algorithm
+PerfResult winograd_multiply(const float* A, const float* B, float* C, int N);
+
+// Function declarations for rocBLAS reference implementation
+PerfResult rocblas_sgemm_ref(const float* A, const float* B, float* C, int N, int K, int M);
+
+// Utility functions
+void generate_random_sparse_matrix(CSRMatrix&amp; mat, float density);
+void generate_random_sparse_matrix(COOMatrix&amp; mat, float density);
+void generate_random_sparse_matrix(BlockCSRMatrix&amp; mat, float density);
+void generate_random_matrix(float* mat, int rows, int cols);
+double compare_matrices(const float* A, const float* B, int rows, int cols);
+void print_performance_results(const std::vector&lt;PerfResult&gt;&amp; results); </code></pre>
+    </div>
+
+    <div class="file-section">
+        <h3>sparse_gemm.cpp</h3>
+        <pre><code class="language-cpp">#include "matrix_mult.h"
+#include &lt;hip/hip_runtime.h&gt;
+#include &lt;chrono&gt;
+
+// Define HIP_CHECK macro for error handling
+#define HIP_CHECK(call) do {                                                        \
+    hipError_t err = call;                                                         \
+    if (err != hipSuccess) {                                                       \
+        printf("HIP error %s:%d: '%s'\n", __FILE__, __LINE__,                     \
+               hipGetErrorString(err));                                            \
+        exit(1);                                                                   \
+    }                                                                              \
+} while(0)
+
+// CSR SpMM kernel
+__global__ void spmm_csr_kernel(const float* values, const int* row_ptr, 
+                               const int* col_indices, const float* B, float* C,
+                               int M, int K, int N) {
+    int row = blockIdx.x * blockDim.x + threadIdx.x;
+    if (row &lt; M) {
+        for (int col = 0; col &lt; N; col++) {
+            float sum = 0.0f;
+            for (int i = row_ptr[row]; i &lt; row_ptr[row + 1]; i++) {
+                int k = col_indices[i];
+                sum += values[i] * B[k * N + col];
+            }
+            C[row * N + col] = sum;
+        }
+    }
+}
+
+// COO SpMM kernel
+__global__ void spmm_coo_kernel(const float* values, const int* row_indices,
+                               const int* col_indices, const float* B, float* C,
+                               int nnz, int M) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx &lt; nnz) {
+        int row = row_indices[idx];
+        int col = col_indices[idx];
+        float val = values[idx];
+        
+        for (int j = 0; j &lt; M; j++) {
+            atomicAdd(&amp;C[row * M + j], val * B[col * M + j]);
+        }
+    }
+}
+
+// Block-CSR SpMM kernel
+__global__ void spmm_block_csr_kernel(const float* values, const int* row_ptr,
+                                     const int* col_indices, const float* B, float* C,
+                                     int N, int K, int M, int block_size) {
+    int row_block = blockIdx.x;
+    int thread_id = threadIdx.x;
+    
+    __shared__ float shared_B[32][32];  // Assuming max block size of 32
+    
+    int row = row_block * block_size;
+    if (row &lt; N) {
+        for (int col = 0; col &lt; M; col += block_size) {
+            // Load block of matrix B into shared memory
+            if (col + thread_id &lt; M &amp;&amp; thread_id &lt; block_size) {
+                for (int k = row_ptr[row_block]; k &lt; row_ptr[row_block + 1]; k++) {
+                    int col_block = col_indices[k] * block_size;
+                    shared_B[thread_id][0] = B[(col_block + thread_id) * M + col];
+                }
+            }
+            __syncthreads();
+            
+            // Compute block multiplication
+            if (thread_id &lt; block_size &amp;&amp; row + thread_id &lt; N &amp;&amp; col &lt; M) {
+                float sum = 0.0f;
+                for (int k = row_ptr[row_block]; k &lt; row_ptr[row_block + 1]; k++) {
+                    int val_idx = k * block_size * block_size + thread_id;
+                    sum += values[val_idx] * shared_B[thread_id][0];
+                }
+                C[(row + thread_id) * M + col] = sum;
+            }
+            __syncthreads();
+        }
+    }
+}
+
+PerfResult sparse_gemm_csr(const CSRMatrix&amp; A, const float* B, float* C,
+                          int M, int K, int N) {
+    float *d_values, *d_B, *d_C;
+    int *d_row_ptr, *d_col_indices;
+    
+    // Get number of non-zero elements
+    int nnz = A.values.size();
+    
+    // Allocate device memory
+    HIP_CHECK(hipMalloc(&amp;d_values, A.values.size() * sizeof(float)));
+    HIP_CHECK(hipMalloc(&amp;d_row_ptr, A.row_ptr.size() * sizeof(int)));
+    HIP_CHECK(hipMalloc(&amp;d_col_indices, A.col_indices.size() * sizeof(int)));
+    HIP_CHECK(hipMalloc(&amp;d_B, K * N * sizeof(float)));
+    HIP_CHECK(hipMalloc(&amp;d_C, M * N * sizeof(float)));
+    
+    // Copy data to device
+    HIP_CHECK(hipMemcpy(d_values, A.values.data(), A.values.size() * sizeof(float), hipMemcpyHostToDevice));
+    HIP_CHECK(hipMemcpy(d_row_ptr, A.row_ptr.data(), A.row_ptr.size() * sizeof(int), hipMemcpyHostToDevice));
+    HIP_CHECK(hipMemcpy(d_col_indices, A.col_indices.data(), A.col_indices.size() * sizeof(int), hipMemcpyHostToDevice));
+    HIP_CHECK(hipMemcpy(d_B, B, K * N * sizeof(float), hipMemcpyHostToDevice));
+    
+    // Initialize C with zeros
+    HIP_CHECK(hipMemset(d_C, 0, M * N * sizeof(float)));
+    
+    // Set up timing
+    hipEvent_t start, stop;
+    HIP_CHECK(hipEventCreate(&amp;start));
+    HIP_CHECK(hipEventCreate(&amp;stop));
+    
+    // Launch kernel
+    dim3 block(256);
+    dim3 grid((M + block.x - 1) / block.x);
+    
+    HIP_CHECK(hipEventRecord(start));
+    hipLaunchKernelGGL(spmm_csr_kernel, grid, block, 0, nullptr,
+                       d_values, d_row_ptr, d_col_indices, d_B, d_C, M, K, N);
+    HIP_CHECK(hipEventRecord(stop));
+    HIP_CHECK(hipEventSynchronize(stop));
+    
+    float milliseconds = 0;
+    HIP_CHECK(hipEventElapsedTime(&amp;milliseconds, start, stop));
+    
+    // Copy result back to host
+    HIP_CHECK(hipMemcpy(C, d_C, M * N * sizeof(float), hipMemcpyDeviceToHost));
+    
+    // Calculate performance metrics
+    double gflops = (2.0 * nnz * N) / (milliseconds * 1e6);
+    
+    // Cleanup
+    HIP_CHECK(hipFree(d_values));
+    HIP_CHECK(hipFree(d_row_ptr));
+    HIP_CHECK(hipFree(d_col_indices));
+    HIP_CHECK(hipFree(d_B));
+    HIP_CHECK(hipFree(d_C));
+    HIP_CHECK(hipEventDestroy(start));
+    HIP_CHECK(hipEventDestroy(stop));
+    
+    return {milliseconds, gflops, "CSR", 0.0};
+}
+
+PerfResult sparse_gemm_coo(const COOMatrix&amp; A, const float* B, float* C,
+                          int M, int K, int N) {
+    float *d_values, *d_B, *d_C;
+    int *d_row_indices, *d_col_indices;
+    
+    // Allocate device memory
+    HIP_CHECK(hipMalloc(&amp;d_values, A.values.size() * sizeof(float)));
+    HIP_CHECK(hipMalloc(&amp;d_row_indices, A.row_indices.size() * sizeof(int)));
+    HIP_CHECK(hipMalloc(&amp;d_col_indices, A.col_indices.size() * sizeof(int)));
+    HIP_CHECK(hipMalloc(&amp;d_B, K * N * sizeof(float)));
+    HIP_CHECK(hipMalloc(&amp;d_C, M * N * sizeof(float)));
+    
+    // Copy data to device
+    HIP_CHECK(hipMemcpy(d_values, A.values.data(), A.values.size() * sizeof(float), hipMemcpyHostToDevice));
+    HIP_CHECK(hipMemcpy(d_row_indices, A.row_indices.data(), A.row_indices.size() * sizeof(int), hipMemcpyHostToDevice));
+    HIP_CHECK(hipMemcpy(d_col_indices, A.col_indices.data(), A.col_indices.size() * sizeof(int), hipMemcpyHostToDevice));
+    HIP_CHECK(hipMemcpy(d_B, B, K * N * sizeof(float), hipMemcpyHostToDevice));
+    
+    // Initialize C with zeros
+    HIP_CHECK(hipMemset(d_C, 0, M * N * sizeof(float)));
+    
+    // Set up timing
+    hipEvent_t start, stop;
+    HIP_CHECK(hipEventCreate(&amp;start));
+    HIP_CHECK(hipEventCreate(&amp;stop));
+    
+    // Launch kernel
+    dim3 block(256);
+    dim3 grid((A.nnz + block.x - 1) / block.x);
+    
+    HIP_CHECK(hipEventRecord(start));
+    hipLaunchKernelGGL(spmm_coo_kernel, grid, block, 0, nullptr,
+                       d_values, d_row_indices, d_col_indices, d_B, d_C, A.nnz, M);
+    HIP_CHECK(hipEventRecord(stop));
+    HIP_CHECK(hipEventSynchronize(stop));
+    
+    float milliseconds = 0;
+    HIP_CHECK(hipEventElapsedTime(&amp;milliseconds, start, stop));
+    
+    // Copy result back to host
+    HIP_CHECK(hipMemcpy(C, d_C, M * N * sizeof(float), hipMemcpyDeviceToHost));
+    
+    // Calculate performance metrics
+    double gflops = (2.0 * A.nnz * N) / (milliseconds * 1e6);
+    
+    // Cleanup
+    HIP_CHECK(hipFree(d_values));
+    HIP_CHECK(hipFree(d_row_indices));
+    HIP_CHECK(hipFree(d_col_indices));
+    HIP_CHECK(hipFree(d_B));
+    HIP_CHECK(hipFree(d_C));
+    HIP_CHECK(hipEventDestroy(start));
+    HIP_CHECK(hipEventDestroy(stop));
+    
+    return {milliseconds, gflops, "COO", 0.0};
+}
+
+PerfResult sparse_gemm_block_csr(const BlockCSRMatrix&amp; A, const float* B, float* C,
+                                int M, int K, int N) {
+    float *d_values, *d_B, *d_C;
+    int *d_row_ptr, *d_col_indices;
+    
+    // Calculate nnz for Block-CSR
+    int nnz = A.values.size() / (A.block_size * A.block_size);
+    
+    // Allocate device memory
+    HIP_CHECK(hipMalloc(&amp;d_values, A.values.size() * sizeof(float)));
+    HIP_CHECK(hipMalloc(&amp;d_row_ptr, A.row_ptr.size() * sizeof(int)));
+    HIP_CHECK(hipMalloc(&amp;d_col_indices, A.col_indices.size() * sizeof(int)));
+    HIP_CHECK(hipMalloc(&amp;d_B, K * N * sizeof(float)));
+    HIP_CHECK(hipMalloc(&amp;d_C, M * N * sizeof(float)));
+    
+    // Copy data to device
+    HIP_CHECK(hipMemcpy(d_values, A.values.data(), A.values.size() * sizeof(float), hipMemcpyHostToDevice));
+    HIP_CHECK(hipMemcpy(d_row_ptr, A.row_ptr.data(), A.row_ptr.size() * sizeof(int), hipMemcpyHostToDevice));
+    HIP_CHECK(hipMemcpy(d_col_indices, A.col_indices.data(), A.col_indices.size() * sizeof(int), hipMemcpyHostToDevice));
+    HIP_CHECK(hipMemcpy(d_B, B, K * N * sizeof(float), hipMemcpyHostToDevice));
+    
+    // Initialize C with zeros
+    HIP_CHECK(hipMemset(d_C, 0, M * N * sizeof(float)));
+    
+    // Set up timing
+    hipEvent_t start, stop;
+    HIP_CHECK(hipEventCreate(&amp;start));
+    HIP_CHECK(hipEventCreate(&amp;stop));
+    
+    // Launch kernel
+    dim3 block(A.block_size * A.block_size);
+    dim3 grid((N + A.block_size - 1) / A.block_size);
+    
+    HIP_CHECK(hipEventRecord(start));
+    hipLaunchKernelGGL(spmm_block_csr_kernel, grid, block, 0, nullptr,
+                       d_values, d_row_ptr, d_col_indices, d_B, d_C,
+                       N, K, M, A.block_size);
+    HIP_CHECK(hipEventRecord(stop));
+    HIP_CHECK(hipEventSynchronize(stop));
+    
+    float milliseconds = 0;
+    HIP_CHECK(hipEventElapsedTime(&amp;milliseconds, start, stop));
+    
+    // Copy result back to host
+    HIP_CHECK(hipMemcpy(C, d_C, M * N * sizeof(float), hipMemcpyDeviceToHost));
+    
+    // Calculate performance metrics
+    double gflops = (2.0 * nnz * A.block_size * A.block_size * N) / (milliseconds * 1e6);
+    
+    // Cleanup
+    HIP_CHECK(hipFree(d_values));
+    HIP_CHECK(hipFree(d_row_ptr));
+    HIP_CHECK(hipFree(d_col_indices));
+    HIP_CHECK(hipFree(d_B));
+    HIP_CHECK(hipFree(d_C));
+    HIP_CHECK(hipEventDestroy(start));
+    HIP_CHECK(hipEventDestroy(stop));
+    
+    return {milliseconds, gflops, "Block-CSR", 0.0};
 } </code></pre>
     </div>
 

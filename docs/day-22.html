@@ -163,28 +163,26 @@
         <div class="description">
             <h2>Description</h2>
             <div class="desc-content">
-### File: `EM_kernel.cu`
-**Summary:**  
-Developed the Expectation-Maximization (EM) algorithm in CUDA for clustering 1D data into a specified number of clusters. The implementation includes E-step and M-step kernels to maximize the expected likelihood function iteratively.
-
-**Key Components:**
-- **E-step Kernel (`eStepKernel`):**  
-  Calculates the responsibilities (probabilities) of each data point belonging to each cluster based on current parameters (means, standard deviations, mixing coefficients).
-  
-- **M-step Kernel (`mStepKernel`):**  
-  Updates the parameters for each cluster (mean, variance, and mixing coefficients) based on the responsibilities calculated in the E-step.
-
-**Learnings:**  
-- Gained practical experience with CUDA memory management, including data allocation and copying between host and device.  
-- Understood how to implement parallel reduction using atomic operations for accumulating sums across threads in the M-step phase.  
-- Familiarized with Gaussian mixture modeling concepts and the iterative nature of the EM algorithm, enhancing the ability to cluster data points effectively.
-
----
-
-### Reading:
-- Reviewed relevant literature on Gaussian Mixture Models and the EM algorithm's applications in various domains, including image processing and statistical analysis.  
-
----
+<h3>File: <code>EM_kernel.cu</code></h3>
+<p><strong>Summary:</strong><br />
+Developed the Expectation-Maximization (EM) algorithm in CUDA for clustering 1D data into a specified number of clusters. The implementation includes E-step and M-step kernels to maximize the expected likelihood function iteratively.</p>
+<p><strong>Key Components:</strong>
+- <strong>E-step Kernel (<code>eStepKernel</code>):</strong><br />
+  Calculates the responsibilities (probabilities) of each data point belonging to each cluster based on current parameters (means, standard deviations, mixing coefficients).</p>
+<ul>
+<li><strong>M-step Kernel (<code>mStepKernel</code>):</strong><br />
+  Updates the parameters for each cluster (mean, variance, and mixing coefficients) based on the responsibilities calculated in the E-step.</li>
+</ul>
+<p><strong>Learnings:</strong><br />
+- Gained practical experience with CUDA memory management, including data allocation and copying between host and device.<br />
+- Understood how to implement parallel reduction using atomic operations for accumulating sums across threads in the M-step phase.<br />
+- Familiarized with Gaussian mixture modeling concepts and the iterative nature of the EM algorithm, enhancing the ability to cluster data points effectively.</p>
+<hr />
+<h3>Reading:</h3>
+<ul>
+<li>Reviewed relevant literature on Gaussian Mixture Models and the EM algorithm's applications in various domains, including image processing and statistical analysis.  </li>
+</ul>
+<hr />
             </div>
         </div>
         

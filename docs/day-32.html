@@ -163,29 +163,28 @@
         <div class="description">
             <h2>Description</h2>
             <div class="desc-content">
-### File: `sgemm.cpp`, `sgemm.h`, `kernel3_registers.cpp`, `kernel3_registers.h`
-**Summary:**  
-Implemented and optimized SGEMM (Single-precision General Matrix Multiplication) for AMD GPUs with register tiling. The implementation achieved impressive performance metrics, particularly for small matrix sizes.
-
-**Performance Highlights:**
+<h3>File: <code>sgemm.cpp</code>, <code>sgemm.h</code>, <code>kernel3_registers.cpp</code>, <code>kernel3_registers.h</code></h3>
+<p><strong>Summary:</strong><br />
+Implemented and optimized SGEMM (Single-precision General Matrix Multiplication) for AMD GPUs with register tiling. The implementation achieved impressive performance metrics, particularly for small matrix sizes.</p>
+<p><strong>Performance Highlights:</strong>
 - Exceptional performance for small matrices (N=1024):
   - Custom implementation: 2029.76 GFLOPS
   - ~49x faster than rocBLAS for small matrices
 - Competitive performance for medium/large matrices:
   - Up to 18565.31 GFLOPS at N=4096
-  - Efficient scaling up to 4096x4096 matrices
-
-**Learned:**
+  - Efficient scaling up to 4096x4096 matrices</p>
+<p><strong>Learned:</strong>
 - Optimization techniques for matrix multiplication on AMD GPUs
 - Register-level optimizations for improved performance
 - Trade-offs between custom implementations and vendor libraries
-- Performance scaling characteristics across different matrix sizes
-
-### Reading:
-- Analyzed benchmark results comparing custom SGEMM implementation with rocBLAS
-- Studied performance characteristics and scaling patterns for different matrix sizes
-- Following this article: https://seb-v.github.io/optimization/update/2025/01/20/Fast-GPU-Matrix-multiplication.html
----
+- Performance scaling characteristics across different matrix sizes</p>
+<h3>Reading:</h3>
+<ul>
+<li>Analyzed benchmark results comparing custom SGEMM implementation with rocBLAS</li>
+<li>Studied performance characteristics and scaling patterns for different matrix sizes</li>
+<li>Following this article: https://seb-v.github.io/optimization/update/2025/01/20/Fast-GPU-Matrix-multiplication.html</li>
+</ul>
+<hr />
             </div>
         </div>
         
@@ -349,32 +348,6 @@ int main() {
     rocblas_destroy_handle(handle);
     return 0;
 } </code></pre>
-    </div>
-
-    <div class="file-section">
-        <h3>sgemm.h</h3>
-        <pre><code class="language-c">#pragma once
-
-class SGEMM {
-public:
-    virtual void init() = 0;
-    virtual void run(float *d_a, float *d_b, float *d_c, float alpha, float beta, int N) = 0;
-    virtual void finalize() = 0;
-    virtual ~SGEMM() = default;
-}; </code></pre>
-    </div>
-
-    <div class="file-section">
-        <h3>kernel3_registers.h</h3>
-        <pre><code class="language-c">#pragma once
-#include "sgemm.h"
-
-class Kernel3Registers : public SGEMM {
-public:
-    void init() override;
-    void run(float *d_a, float *d_b, float *d_c, float alpha, float beta, int N) override;
-    void finalize() override;
-}; </code></pre>
     </div>
 
     <div class="file-section">
@@ -550,6 +523,32 @@ void Kernel3Registers::run(float *d_a, float *d_b, float *d_c, float alpha, floa
 void Kernel3Registers::finalize()
 {
 } </code></pre>
+    </div>
+
+    <div class="file-section">
+        <h3>sgemm.h</h3>
+        <pre><code class="language-c">#pragma once
+
+class SGEMM {
+public:
+    virtual void init() = 0;
+    virtual void run(float *d_a, float *d_b, float *d_c, float alpha, float beta, int N) = 0;
+    virtual void finalize() = 0;
+    virtual ~SGEMM() = default;
+}; </code></pre>
+    </div>
+
+    <div class="file-section">
+        <h3>kernel3_registers.h</h3>
+        <pre><code class="language-c">#pragma once
+#include "sgemm.h"
+
+class Kernel3Registers : public SGEMM {
+public:
+    void init() override;
+    void run(float *d_a, float *d_b, float *d_c, float alpha, float beta, int N) override;
+    void finalize() override;
+}; </code></pre>
     </div>
 
     </div>

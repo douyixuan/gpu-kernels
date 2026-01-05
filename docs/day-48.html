@@ -163,9 +163,8 @@
         <div class="description">
             <h2>Description</h2>
             <div class="desc-content">
-### Files: `lbfgs.cu`
-
-I implemented a CUDA-based version of the L-BFGS optimization algorithm, leveraging GPU parallelism to accelerate the two-loop recursion for search direction computation. The implementation includes custom CUDA kernels for parallel dot product computation, vector operations (subtraction, scaling, addition), and efficient memory management to minimize host-device communication. The search direction is computed using a simplified two-loop recursion, updating intermediate vectors based on correction pairs and scaling factors. By optimizing memory access and reducing redundant computations, this implementation enhances performance for large-scale optimization tasks in machine learning and scientific computing.
+<h3>Files: <code>lbfgs.cu</code></h3>
+<p>I implemented a CUDA-based version of the L-BFGS optimization algorithm, leveraging GPU parallelism to accelerate the two-loop recursion for search direction computation. The implementation includes custom CUDA kernels for parallel dot product computation, vector operations (subtraction, scaling, addition), and efficient memory management to minimize host-device communication. The search direction is computed using a simplified two-loop recursion, updating intermediate vectors based on correction pairs and scaling factors. By optimizing memory access and reducing redundant computations, this implementation enhances performance for large-scale optimization tasks in machine learning and scientific computing.</p>
             </div>
         </div>
         

@@ -170,6 +170,352 @@
         <h2 style="margin-bottom: 1rem; color: #667eea;">Code Files</h2>
 
     <div class="file-section">
+        <h3>flash_attention_backprop/kernels.cuh</h3>
+        <pre><code class="language-cuda">#ifndef KERNELS_CUH
+#define KERNELS_CUH
+
+__global__ void computeDKernel(const float* dO, const float* O, float* D, int N, int d);
+
+__global__ void computeSiKernel(const float* Qi, const float* Kj, float* Si, int Br, int Bc, int d, float scale);
+
+__global__ void findRowMaxSiKernel(float* Si, float* maxSi, int Br, int Bc);
+
+__global__ void computeSoftmaxKernel(float* Si, float* softmaxSi, int Br, int Bc);
+
+__global__ void computeAttentionKernel(const float* Q, const float* K, const float* V, float* attention, int N, int d);
+
+__global__ void computeQKernel(const float* Q, const float* dO, float* dQ, int N, int d);
+
+__global__ void computeKKernel(const float* K, const float* dO, float* dK, int N, int d);
+
+__global__ void computeVKernel(const float* V, const float* dO, float* dV, int N, int d);
+
+__global__ void computeGradientsKernel(const float* dO, float* dQ, float* dK, float* dV, int N, int d);
+
+#endif
+</code></pre>
+    </div>
+
+    <div class="file-section">
+        <h3>flash_attention_backprop/helper.cuh</h3>
+        <pre><code class="language-cuda">#ifndef HELPER_CUH
+#define HELPER_CUH
+
+__device__ float warpReduceMax(float val);
+
+#endif
+</code></pre>
+    </div>
+
+    <div class="file-section">
+        <h3>flash_attention_backprop/helper.cu</h3>
+        <pre><code class="language-cuda">#include &lt;cuda_runtime.h&gt;
+#include &lt;math.h&gt;
+#include "helper.cuh"
+
+__device__ float warpReduceMax(float val) {
+    for (int offset = 16; offset &gt; 0; offset /= 2) {
+        val = fmaxf(val, __shfl_down_sync(0xffffffff, val, offset));
+    }
+    return val;
+}
+</code></pre>
+    </div>
+
+    <div class="file-section">
+        <h3>flash_attention_backprop/kernels.cu</h3>
+        <pre><code class="language-cuda">#include &lt;cuda_runtime.h&gt;
+#include &lt;math.h&gt;
+#include "kernels.cuh"
+
+
+__global__ void computeDKernel(const float* dO, const float* O, float* D, int N, int d) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx &gt;= N) return;
+
+    float sum = 0.0f;
+    for (int i = 0; i &lt; d; i++) {
+        sum += dO[idx * d + i] * O[idx * d + i];
+    }
+    D[idx] = sum;
+}
+
+__global__ void computeSiKernel(const float* Qi, const float* Kj, float* Si, int Br, int Bc, int d, float scale) {
+    int row = blockIdx.x * blockDim.x + threadIdx.x;
+    if (row &gt;= Br) return;
+
+    for (int col = 0; col &lt; Bc; ++col) {
+        float sum = 0.0f;
+        for (int k = 0; k &lt; d; ++k) {
+            sum += Qi[row * d + k] * Kj[col * d + k];
+        }
+        Si[row * Bc + col] = sum * scale; // Apply scaling here
+    }
+}
+
+__global__ void findRowMaxSiKernel(const float* Si, float* maxSi, int Br, int Bc) {
+    int row = blockIdx.x * blockDim.x + threadIdx.x;
+    if (row &gt;= Br) return;
+
+    __shared__ float shared_max[BLOCK_SIZE];
+    float local_max = NEGATIVE_INFINITY;
+
+    for (int col = threadIdx.x; col &lt; Bc; col += blockDim.x) {
+        local_max = fmaxf(local_max, Si[row * Bc + col]);
+    }
+
+    shared_max[threadIdx.x] = local_max;
+    __syncthreads();
+
+    for (int s = blockDim.x / 2; s &gt; 0; s &gt;&gt;= 1) {
+        if (threadIdx.x &lt; s) {
+            shared_max[threadIdx.x] = fmaxf(shared_max[threadIdx.x], shared_max[threadIdx.x + s]);
+        }
+        __syncthreads();
+    }
+
+    if (threadIdx.x == 0) {
+        maxSi[row] = shared_max[0];
+    }
+}
+
+__global__ void computePiKernel(const float* Si, const float* Li, float* Pi, int Br, int Bc, const float* maxSi) {
+    int row = blockIdx.x * blockDim.x + threadIdx.x;
+    int col = threadIdx.x;
+    if (row &gt;= Br) return;
+
+    __shared__ float shared_max[BLOCK_SIZE];
+     if (col &lt; Bc) {
+         float si_val = Si[row * Bc + col];
+         float li_val = Li[row];
+         float max_si_val = maxSi[row];
+         float val = expf(si_val - li_val - max_si_val);
+         if (isnan(val) || isinf(val)) {
+             val = 0.0f;
+         }
+         Pi[row * Bc + col] = val;
+    }
+}
+
+__global__ void computeDViKernel(const float* Pi, const float* dOi, float* dVj_temp, int Br, int Bc, int d) {
+    int col_dVi = blockIdx.x * blockDim.x + threadIdx.x;
+    if (col_dVi &gt;= d) return;
+
+    for (int row_dVj = 0; row_dVj &lt; Bc; ++row_dVj) {
+        float sum = 0.0f;
+        for (int row_Pi = 0; row_Pi &lt; Br; ++row_Pi) {
+            sum += Pi[row_Pi * Bc + row_dVj] * dOi[row_Pi * d + col_dVi];
+        }
+        dVj_temp[row_dVj * d + col_dVi] = sum;
+    }
+}
+
+__global__ void computeDPiKernel(const float* dOi, const float* Vj, float* dPi, int Br, int Bc, int d) {
+    int row = blockIdx.x * blockDim.x + threadIdx.x;
+    if (row &gt;= Br) return;
+
+    for (int col = 0; col &lt; Bc; ++col) {
+        float sum = 0.0f;
+        for (int k = 0; k &lt; d; ++k) {
+            sum += dOi[row * d + k] * Vj[col * d + k];
+        }
+        dPi[row * Bc + col] = sum;
+    }
+}
+
+__global__ void computeDSiKernel(const float* Pi, const float* dPi, const float* Di, float* dSi, int Br, int Bc) {
+    int row = blockIdx.x * blockDim.x + threadIdx.x;
+    int col = threadIdx.x;
+
+    if (row &gt;= Br || col &gt;= Bc) return;
+    __shared__ float shared_di[BLOCK_SIZE];
+     if(threadIdx.x &lt; Bc) {
+         shared_di[threadIdx.x] = Di[row]; // Load each element of Di
+     }
+     __syncthreads();
+    dSi[row * Bc + col] = Pi[row * Bc + col] * (dPi[row * Bc + col] - shared_di[threadIdx.x]);
+}
+
+__global__ void computeDQiKernel(const float* dSi, const float* Kj, float* dQi_temp, int Br, int d, int Bc) {
+    int row = blockIdx.x * blockDim.x + threadIdx.x;
+    if (row &gt;= Br) return;
+
+    for (int col = 0; col &lt; d; ++col) {
+        float sum = 0.0f;
+        for (int k = 0; k &lt; Bc; ++k) {
+            sum += dSi[row * Bc + k] * Kj[k * d + col];
+        }
+        dQi_temp[row * d + col] = sum;
+    }
+}
+
+__global__ void computeDKjKernel(const float* dSi, const float* Qi, float* dKj_temp, int Bc, int d, int Br) {
+    int col = blockIdx.x * blockDim.x + threadIdx.x;
+    if (col &gt;= Bc) return;
+
+    for (int row = 0; row &lt; d; ++row) {
+        float sum = 0.0f;
+        for (int k = 0; k &lt; Br; ++k) {
+            sum += dSi[k * Bc + col] * Qi[k * d + row];
+        }
+        dKj_temp[col * d + row] = sum;
+    }
+}
+
+__global__ void accumulateDQKernel(float* dQ, const float* dQi_temp, int Br, int d, int globalOffset) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx &gt;= Br * d) return;
+
+    atomicAdd(&amp;dQ[globalOffset + idx], dQi_temp[idx]);
+}
+
+__global__ void accumulateDKVjKernel(float* dK, float* dV, const float* dKj_temp, const float* dVj_temp, int Bc, int d, int globalOffset) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx &gt;= Bc * d) return;
+
+    atomicAdd(&amp;dK[globalOffset + idx], dKj_temp[idx]);
+    atomicAdd(&amp;dV[globalOffset + idx], dVj_temp[idx]);
+}</code></pre>
+    </div>
+
+    <div class="file-section">
+        <h3>flash_attention_backprop/flash.cu</h3>
+        <pre><code class="language-cuda">#include &lt;cuda_runtime.h&gt;
+#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+#include &lt;math.h&gt;
+#include &lt;curand_kernel.h&gt;  
+#include &lt;limits&gt; 
+#include "helper.cuh"
+#include "kernels.cuh"
+#define BLOCK_SIZE 1024
+#define THREADS_PER_BLOCK 1024
+#define NEGATIVE_INFINITY -1e38f
+void flashAttention2BackwardPass(const float* Q, const float* K, const float* V, const float* O, const float* dO, float* dQ, float* dK, float* dV, int N, int d, int Bc, int Br, float* Lhost) {
+    float scale = 1.0f / sqrtf((float)d);
+    // Initialize D
+    float* D_device;
+    cudaMalloc((void**)&amp;D_device, N * sizeof(float));
+    computeDKernel&lt;&lt;&lt;(N + BLOCK_SIZE - 1) / BLOCK_SIZE, BLOCK_SIZE&gt;&gt;&gt;(dO, O, D_device, N, d);
+    cudaDeviceSynchronize();
+
+    float* D_host = (float*)malloc(N * sizeof(float));
+    cudaMemcpy(D_host, D_device, N * sizeof(float), cudaMemcpyDeviceToHost);
+
+    // Initialize dQ, dK, dV on device
+    cudaMemset(dQ, 0, N * d * sizeof(float));
+    cudaMemset(dK, 0, N * d * sizeof(float));
+    cudaMemset(dV, 0, N * d * sizeof(float));
+
+    for (int j = 0; j &lt; (N + Bc - 1) / Bc; ++j) {
+        // Load Kj, Vj from HBM to on-chip SRAM (Simulated by host memory for now)
+        float* Kj_host = (float*)malloc(Bc * d * sizeof(float));
+        float* Vj_host = (float*)malloc(Bc * d * sizeof(float));
+        cudaMemcpy(Kj_host, K + j * Bc * d, Bc * d * sizeof(float), cudaMemcpyDeviceToHost);
+        cudaMemcpy(Vj_host, V + j * Bc * d, Bc * d * sizeof(float), cudaMemcpyDeviceToHost);
+
+        float* Kj_device;
+        float* Vj_device;
+        cudaMalloc((void**)&amp;Kj_device, Bc * d * sizeof(float));
+        cudaMalloc((void**)&amp;Vj_device, Bc * d * sizeof(float));
+        cudaMemcpy(Kj_device, Kj_host, Bc * d * sizeof(float), cudaMemcpyHostToDevice);
+        cudaMemcpy(Vj_device, Vj_host, Bc * d * sizeof(float), cudaMemcpyHostToDevice);
+
+        // Initialize dKj, dVj on SRAM (Simulated by device memory for now)
+        float* dKj_temp;
+        float* dVj_temp;
+        cudaMalloc((void**)&amp;dKj_temp, Bc * d * sizeof(float));
+        cudaMalloc((void**)&amp;dVj_temp, Bc * d * sizeof(float));
+        cudaMemset(dKj_temp, 0, Bc * d * sizeof(float));
+        cudaMemset(dVj_temp, 0, Bc * d * sizeof(float));
+
+        for (int i = 0; i &lt; (N + Br - 1) / Br; ++i) {
+            // Load Qi, dOi, dQi, Li, Di from HBM to on-chip SRAM (Simulated by device memory for now)
+            const float* Qi = Q + i * Br * d;
+            const float* dOi = dO + i * Br * d;
+            float* dQi_temp;
+            cudaMalloc((void**)&amp;dQi_temp, Br * d * sizeof(float));
+            cudaMemset(dQi_temp, 0, Br * d * sizeof(float));
+
+            const float* Li = Lhost + i * Br; // Assuming L is divided into blocks of size Br
+            const float* Di = D_host + i * Br; // D is now divided into blocks of size Br
+
+            // Allocate intermediate buffers on device for each loop iteration
+            float* Si_device;
+            float* Pi_device;
+            float* dPi_device;
+            float* dSi_device;
+            cudaMalloc((void**)&amp;Si_device, Br * Bc * sizeof(float));
+            cudaMalloc((void**)&amp;Pi_device, Br * Bc * sizeof(float));
+            cudaMalloc((void**)&amp;dPi_device, Br * Bc * sizeof(float));
+            cudaMalloc((void**)&amp;dSi_device, Br * Bc * sizeof(float));
+
+            // Compute S_i
+            computeSiKernel&lt;&lt;&lt;(Br + BLOCK_SIZE - 1) / BLOCK_SIZE, BLOCK_SIZE&gt;&gt;&gt;(Qi, Kj_device, Si_device, Br, Bc, d, scale);
+            cudaDeviceSynchronize();
+
+            // Find row-wise max of S_i
+            float* maxSi_device;
+            cudaMalloc((void**)&amp;maxSi_device, Br * sizeof(float));
+            findRowMaxSiKernel&lt;&lt;&lt;(Br + BLOCK_SIZE - 1) / BLOCK_SIZE, BLOCK_SIZE&gt;&gt;&gt;(Si_device, maxSi_device, Br, Bc);
+            cudaDeviceSynchronize();
+
+            // Compute P_i
+            computePiKernel&lt;&lt;&lt;(Br + BLOCK_SIZE - 1) / BLOCK_SIZE, BLOCK_SIZE&gt;&gt;&gt;(Si_device, Li, Pi_device, Br, Bc, maxSi_device);
+            cudaDeviceSynchronize();
+
+            // Compute dVj += (P_i^T) * dOi
+            computeDViKernel&lt;&lt;&lt;(d + BLOCK_SIZE - 1) / BLOCK_SIZE, BLOCK_SIZE&gt;&gt;&gt;(Pi_device, dOi, dVj_temp, Br, Bc, d);
+            cudaDeviceSynchronize();
+
+            // Compute dPi = dOi * V_j^T
+            computeDPiKernel&lt;&lt;&lt;(Br + BLOCK_SIZE - 1) / BLOCK_SIZE, BLOCK_SIZE&gt;&gt;&gt;(dOi, Vj_device, dPi_device, Br, Bc, d);
+            cudaDeviceSynchronize();
+
+            // Compute dS_i = P_i * (dP_i - D_i)
+            computeDSiKernel&lt;&lt;&lt;(Br + BLOCK_SIZE - 1) / BLOCK_SIZE, BLOCK_SIZE&gt;&gt;&gt;(Pi_device, dPi_device, Di, dSi_device, Br, Bc);
+            cudaDeviceSynchronize();
+
+            // Compute dQ_i += dS_i * K_j
+            computeDQiKernel&lt;&lt;&lt;(Br + BLOCK_SIZE - 1) / BLOCK_SIZE, BLOCK_SIZE&gt;&gt;&gt;(dSi_device, Kj_device, dQi_temp, Br, d, Bc);
+            cudaDeviceSynchronize();
+
+            // Compute dKj += dS_i^T * Q_i
+            computeDKjKernel&lt;&lt;&lt;(Bc + BLOCK_SIZE - 1) / BLOCK_SIZE, BLOCK_SIZE&gt;&gt;&gt;(dSi_device, Qi, dKj_temp, Bc, d, Br);
+            cudaDeviceSynchronize();
+
+            // Accumulate into dQ
+            accumulateDQKernel&lt;&lt;&lt;(Br * d + BLOCK_SIZE - 1) / BLOCK_SIZE, BLOCK_SIZE&gt;&gt;&gt;(dQ, dQi_temp, Br, d, i * Br * d);
+            cudaDeviceSynchronize();
+
+            // Free intermediate buffers
+            cudaFree(Si_device);
+            cudaFree(Pi_device);
+            cudaFree(dPi_device);
+            cudaFree(dSi_device);
+            cudaFree(maxSi_device);
+            cudaFree(dQi_temp);
+        }
+
+        // Accumulate into dK and dV
+        accumulateDKVjKernel&lt;&lt;&lt;(Bc * d + BLOCK_SIZE - 1) / BLOCK_SIZE, BLOCK_SIZE&gt;&gt;&gt;(dK, dV, dKj_temp, dVj_temp, Bc, d, j * Bc * d);
+        cudaDeviceSynchronize();
+
+        // Free device memory for Kj, Vj, dKj, dVj
+        cudaFree(Kj_device);
+        cudaFree(Vj_device);
+        cudaFree(dKj_temp);
+        cudaFree(dVj_temp);
+        free(Kj_host);
+        free(Vj_host);
+    }
+
+    cudaFree(D_device);
+    free(D_host);
+}</code></pre>
+    </div>
+
+    <div class="file-section">
         <h3>Cnn/cnn.cu</h3>
         <pre><code class="language-cuda">#include &lt;cuda_runtime.h&gt;
 #include &lt;iostream&gt;
@@ -528,352 +874,6 @@ void testConvNet() {
 }
 */
 </code></pre>
-    </div>
-
-    <div class="file-section">
-        <h3>flash_attention_backprop/flash.cu</h3>
-        <pre><code class="language-cuda">#include &lt;cuda_runtime.h&gt;
-#include &lt;stdio.h&gt;
-#include &lt;stdlib.h&gt;
-#include &lt;math.h&gt;
-#include &lt;curand_kernel.h&gt;  
-#include &lt;limits&gt; 
-#include "helper.cuh"
-#include "kernels.cuh"
-#define BLOCK_SIZE 1024
-#define THREADS_PER_BLOCK 1024
-#define NEGATIVE_INFINITY -1e38f
-void flashAttention2BackwardPass(const float* Q, const float* K, const float* V, const float* O, const float* dO, float* dQ, float* dK, float* dV, int N, int d, int Bc, int Br, float* Lhost) {
-    float scale = 1.0f / sqrtf((float)d);
-    // Initialize D
-    float* D_device;
-    cudaMalloc((void**)&amp;D_device, N * sizeof(float));
-    computeDKernel&lt;&lt;&lt;(N + BLOCK_SIZE - 1) / BLOCK_SIZE, BLOCK_SIZE&gt;&gt;&gt;(dO, O, D_device, N, d);
-    cudaDeviceSynchronize();
-
-    float* D_host = (float*)malloc(N * sizeof(float));
-    cudaMemcpy(D_host, D_device, N * sizeof(float), cudaMemcpyDeviceToHost);
-
-    // Initialize dQ, dK, dV on device
-    cudaMemset(dQ, 0, N * d * sizeof(float));
-    cudaMemset(dK, 0, N * d * sizeof(float));
-    cudaMemset(dV, 0, N * d * sizeof(float));
-
-    for (int j = 0; j &lt; (N + Bc - 1) / Bc; ++j) {
-        // Load Kj, Vj from HBM to on-chip SRAM (Simulated by host memory for now)
-        float* Kj_host = (float*)malloc(Bc * d * sizeof(float));
-        float* Vj_host = (float*)malloc(Bc * d * sizeof(float));
-        cudaMemcpy(Kj_host, K + j * Bc * d, Bc * d * sizeof(float), cudaMemcpyDeviceToHost);
-        cudaMemcpy(Vj_host, V + j * Bc * d, Bc * d * sizeof(float), cudaMemcpyDeviceToHost);
-
-        float* Kj_device;
-        float* Vj_device;
-        cudaMalloc((void**)&amp;Kj_device, Bc * d * sizeof(float));
-        cudaMalloc((void**)&amp;Vj_device, Bc * d * sizeof(float));
-        cudaMemcpy(Kj_device, Kj_host, Bc * d * sizeof(float), cudaMemcpyHostToDevice);
-        cudaMemcpy(Vj_device, Vj_host, Bc * d * sizeof(float), cudaMemcpyHostToDevice);
-
-        // Initialize dKj, dVj on SRAM (Simulated by device memory for now)
-        float* dKj_temp;
-        float* dVj_temp;
-        cudaMalloc((void**)&amp;dKj_temp, Bc * d * sizeof(float));
-        cudaMalloc((void**)&amp;dVj_temp, Bc * d * sizeof(float));
-        cudaMemset(dKj_temp, 0, Bc * d * sizeof(float));
-        cudaMemset(dVj_temp, 0, Bc * d * sizeof(float));
-
-        for (int i = 0; i &lt; (N + Br - 1) / Br; ++i) {
-            // Load Qi, dOi, dQi, Li, Di from HBM to on-chip SRAM (Simulated by device memory for now)
-            const float* Qi = Q + i * Br * d;
-            const float* dOi = dO + i * Br * d;
-            float* dQi_temp;
-            cudaMalloc((void**)&amp;dQi_temp, Br * d * sizeof(float));
-            cudaMemset(dQi_temp, 0, Br * d * sizeof(float));
-
-            const float* Li = Lhost + i * Br; // Assuming L is divided into blocks of size Br
-            const float* Di = D_host + i * Br; // D is now divided into blocks of size Br
-
-            // Allocate intermediate buffers on device for each loop iteration
-            float* Si_device;
-            float* Pi_device;
-            float* dPi_device;
-            float* dSi_device;
-            cudaMalloc((void**)&amp;Si_device, Br * Bc * sizeof(float));
-            cudaMalloc((void**)&amp;Pi_device, Br * Bc * sizeof(float));
-            cudaMalloc((void**)&amp;dPi_device, Br * Bc * sizeof(float));
-            cudaMalloc((void**)&amp;dSi_device, Br * Bc * sizeof(float));
-
-            // Compute S_i
-            computeSiKernel&lt;&lt;&lt;(Br + BLOCK_SIZE - 1) / BLOCK_SIZE, BLOCK_SIZE&gt;&gt;&gt;(Qi, Kj_device, Si_device, Br, Bc, d, scale);
-            cudaDeviceSynchronize();
-
-            // Find row-wise max of S_i
-            float* maxSi_device;
-            cudaMalloc((void**)&amp;maxSi_device, Br * sizeof(float));
-            findRowMaxSiKernel&lt;&lt;&lt;(Br + BLOCK_SIZE - 1) / BLOCK_SIZE, BLOCK_SIZE&gt;&gt;&gt;(Si_device, maxSi_device, Br, Bc);
-            cudaDeviceSynchronize();
-
-            // Compute P_i
-            computePiKernel&lt;&lt;&lt;(Br + BLOCK_SIZE - 1) / BLOCK_SIZE, BLOCK_SIZE&gt;&gt;&gt;(Si_device, Li, Pi_device, Br, Bc, maxSi_device);
-            cudaDeviceSynchronize();
-
-            // Compute dVj += (P_i^T) * dOi
-            computeDViKernel&lt;&lt;&lt;(d + BLOCK_SIZE - 1) / BLOCK_SIZE, BLOCK_SIZE&gt;&gt;&gt;(Pi_device, dOi, dVj_temp, Br, Bc, d);
-            cudaDeviceSynchronize();
-
-            // Compute dPi = dOi * V_j^T
-            computeDPiKernel&lt;&lt;&lt;(Br + BLOCK_SIZE - 1) / BLOCK_SIZE, BLOCK_SIZE&gt;&gt;&gt;(dOi, Vj_device, dPi_device, Br, Bc, d);
-            cudaDeviceSynchronize();
-
-            // Compute dS_i = P_i * (dP_i - D_i)
-            computeDSiKernel&lt;&lt;&lt;(Br + BLOCK_SIZE - 1) / BLOCK_SIZE, BLOCK_SIZE&gt;&gt;&gt;(Pi_device, dPi_device, Di, dSi_device, Br, Bc);
-            cudaDeviceSynchronize();
-
-            // Compute dQ_i += dS_i * K_j
-            computeDQiKernel&lt;&lt;&lt;(Br + BLOCK_SIZE - 1) / BLOCK_SIZE, BLOCK_SIZE&gt;&gt;&gt;(dSi_device, Kj_device, dQi_temp, Br, d, Bc);
-            cudaDeviceSynchronize();
-
-            // Compute dKj += dS_i^T * Q_i
-            computeDKjKernel&lt;&lt;&lt;(Bc + BLOCK_SIZE - 1) / BLOCK_SIZE, BLOCK_SIZE&gt;&gt;&gt;(dSi_device, Qi, dKj_temp, Bc, d, Br);
-            cudaDeviceSynchronize();
-
-            // Accumulate into dQ
-            accumulateDQKernel&lt;&lt;&lt;(Br * d + BLOCK_SIZE - 1) / BLOCK_SIZE, BLOCK_SIZE&gt;&gt;&gt;(dQ, dQi_temp, Br, d, i * Br * d);
-            cudaDeviceSynchronize();
-
-            // Free intermediate buffers
-            cudaFree(Si_device);
-            cudaFree(Pi_device);
-            cudaFree(dPi_device);
-            cudaFree(dSi_device);
-            cudaFree(maxSi_device);
-            cudaFree(dQi_temp);
-        }
-
-        // Accumulate into dK and dV
-        accumulateDKVjKernel&lt;&lt;&lt;(Bc * d + BLOCK_SIZE - 1) / BLOCK_SIZE, BLOCK_SIZE&gt;&gt;&gt;(dK, dV, dKj_temp, dVj_temp, Bc, d, j * Bc * d);
-        cudaDeviceSynchronize();
-
-        // Free device memory for Kj, Vj, dKj, dVj
-        cudaFree(Kj_device);
-        cudaFree(Vj_device);
-        cudaFree(dKj_temp);
-        cudaFree(dVj_temp);
-        free(Kj_host);
-        free(Vj_host);
-    }
-
-    cudaFree(D_device);
-    free(D_host);
-}</code></pre>
-    </div>
-
-    <div class="file-section">
-        <h3>flash_attention_backprop/kernels.cuh</h3>
-        <pre><code class="language-cuda">#ifndef KERNELS_CUH
-#define KERNELS_CUH
-
-__global__ void computeDKernel(const float* dO, const float* O, float* D, int N, int d);
-
-__global__ void computeSiKernel(const float* Qi, const float* Kj, float* Si, int Br, int Bc, int d, float scale);
-
-__global__ void findRowMaxSiKernel(float* Si, float* maxSi, int Br, int Bc);
-
-__global__ void computeSoftmaxKernel(float* Si, float* softmaxSi, int Br, int Bc);
-
-__global__ void computeAttentionKernel(const float* Q, const float* K, const float* V, float* attention, int N, int d);
-
-__global__ void computeQKernel(const float* Q, const float* dO, float* dQ, int N, int d);
-
-__global__ void computeKKernel(const float* K, const float* dO, float* dK, int N, int d);
-
-__global__ void computeVKernel(const float* V, const float* dO, float* dV, int N, int d);
-
-__global__ void computeGradientsKernel(const float* dO, float* dQ, float* dK, float* dV, int N, int d);
-
-#endif
-</code></pre>
-    </div>
-
-    <div class="file-section">
-        <h3>flash_attention_backprop/helper.cu</h3>
-        <pre><code class="language-cuda">#include &lt;cuda_runtime.h&gt;
-#include &lt;math.h&gt;
-#include "helper.cuh"
-
-__device__ float warpReduceMax(float val) {
-    for (int offset = 16; offset &gt; 0; offset /= 2) {
-        val = fmaxf(val, __shfl_down_sync(0xffffffff, val, offset));
-    }
-    return val;
-}
-</code></pre>
-    </div>
-
-    <div class="file-section">
-        <h3>flash_attention_backprop/helper.cuh</h3>
-        <pre><code class="language-cuda">#ifndef HELPER_CUH
-#define HELPER_CUH
-
-__device__ float warpReduceMax(float val);
-
-#endif
-</code></pre>
-    </div>
-
-    <div class="file-section">
-        <h3>flash_attention_backprop/kernels.cu</h3>
-        <pre><code class="language-cuda">#include &lt;cuda_runtime.h&gt;
-#include &lt;math.h&gt;
-#include "kernels.cuh"
-
-
-__global__ void computeDKernel(const float* dO, const float* O, float* D, int N, int d) {
-    int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx &gt;= N) return;
-
-    float sum = 0.0f;
-    for (int i = 0; i &lt; d; i++) {
-        sum += dO[idx * d + i] * O[idx * d + i];
-    }
-    D[idx] = sum;
-}
-
-__global__ void computeSiKernel(const float* Qi, const float* Kj, float* Si, int Br, int Bc, int d, float scale) {
-    int row = blockIdx.x * blockDim.x + threadIdx.x;
-    if (row &gt;= Br) return;
-
-    for (int col = 0; col &lt; Bc; ++col) {
-        float sum = 0.0f;
-        for (int k = 0; k &lt; d; ++k) {
-            sum += Qi[row * d + k] * Kj[col * d + k];
-        }
-        Si[row * Bc + col] = sum * scale; // Apply scaling here
-    }
-}
-
-__global__ void findRowMaxSiKernel(const float* Si, float* maxSi, int Br, int Bc) {
-    int row = blockIdx.x * blockDim.x + threadIdx.x;
-    if (row &gt;= Br) return;
-
-    __shared__ float shared_max[BLOCK_SIZE];
-    float local_max = NEGATIVE_INFINITY;
-
-    for (int col = threadIdx.x; col &lt; Bc; col += blockDim.x) {
-        local_max = fmaxf(local_max, Si[row * Bc + col]);
-    }
-
-    shared_max[threadIdx.x] = local_max;
-    __syncthreads();
-
-    for (int s = blockDim.x / 2; s &gt; 0; s &gt;&gt;= 1) {
-        if (threadIdx.x &lt; s) {
-            shared_max[threadIdx.x] = fmaxf(shared_max[threadIdx.x], shared_max[threadIdx.x + s]);
-        }
-        __syncthreads();
-    }
-
-    if (threadIdx.x == 0) {
-        maxSi[row] = shared_max[0];
-    }
-}
-
-__global__ void computePiKernel(const float* Si, const float* Li, float* Pi, int Br, int Bc, const float* maxSi) {
-    int row = blockIdx.x * blockDim.x + threadIdx.x;
-    int col = threadIdx.x;
-    if (row &gt;= Br) return;
-
-    __shared__ float shared_max[BLOCK_SIZE];
-     if (col &lt; Bc) {
-         float si_val = Si[row * Bc + col];
-         float li_val = Li[row];
-         float max_si_val = maxSi[row];
-         float val = expf(si_val - li_val - max_si_val);
-         if (isnan(val) || isinf(val)) {
-             val = 0.0f;
-         }
-         Pi[row * Bc + col] = val;
-    }
-}
-
-__global__ void computeDViKernel(const float* Pi, const float* dOi, float* dVj_temp, int Br, int Bc, int d) {
-    int col_dVi = blockIdx.x * blockDim.x + threadIdx.x;
-    if (col_dVi &gt;= d) return;
-
-    for (int row_dVj = 0; row_dVj &lt; Bc; ++row_dVj) {
-        float sum = 0.0f;
-        for (int row_Pi = 0; row_Pi &lt; Br; ++row_Pi) {
-            sum += Pi[row_Pi * Bc + row_dVj] * dOi[row_Pi * d + col_dVi];
-        }
-        dVj_temp[row_dVj * d + col_dVi] = sum;
-    }
-}
-
-__global__ void computeDPiKernel(const float* dOi, const float* Vj, float* dPi, int Br, int Bc, int d) {
-    int row = blockIdx.x * blockDim.x + threadIdx.x;
-    if (row &gt;= Br) return;
-
-    for (int col = 0; col &lt; Bc; ++col) {
-        float sum = 0.0f;
-        for (int k = 0; k &lt; d; ++k) {
-            sum += dOi[row * d + k] * Vj[col * d + k];
-        }
-        dPi[row * Bc + col] = sum;
-    }
-}
-
-__global__ void computeDSiKernel(const float* Pi, const float* dPi, const float* Di, float* dSi, int Br, int Bc) {
-    int row = blockIdx.x * blockDim.x + threadIdx.x;
-    int col = threadIdx.x;
-
-    if (row &gt;= Br || col &gt;= Bc) return;
-    __shared__ float shared_di[BLOCK_SIZE];
-     if(threadIdx.x &lt; Bc) {
-         shared_di[threadIdx.x] = Di[row]; // Load each element of Di
-     }
-     __syncthreads();
-    dSi[row * Bc + col] = Pi[row * Bc + col] * (dPi[row * Bc + col] - shared_di[threadIdx.x]);
-}
-
-__global__ void computeDQiKernel(const float* dSi, const float* Kj, float* dQi_temp, int Br, int d, int Bc) {
-    int row = blockIdx.x * blockDim.x + threadIdx.x;
-    if (row &gt;= Br) return;
-
-    for (int col = 0; col &lt; d; ++col) {
-        float sum = 0.0f;
-        for (int k = 0; k &lt; Bc; ++k) {
-            sum += dSi[row * Bc + k] * Kj[k * d + col];
-        }
-        dQi_temp[row * d + col] = sum;
-    }
-}
-
-__global__ void computeDKjKernel(const float* dSi, const float* Qi, float* dKj_temp, int Bc, int d, int Br) {
-    int col = blockIdx.x * blockDim.x + threadIdx.x;
-    if (col &gt;= Bc) return;
-
-    for (int row = 0; row &lt; d; ++row) {
-        float sum = 0.0f;
-        for (int k = 0; k &lt; Br; ++k) {
-            sum += dSi[k * Bc + col] * Qi[k * d + row];
-        }
-        dKj_temp[col * d + row] = sum;
-    }
-}
-
-__global__ void accumulateDQKernel(float* dQ, const float* dQi_temp, int Br, int d, int globalOffset) {
-    int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx &gt;= Br * d) return;
-
-    atomicAdd(&amp;dQ[globalOffset + idx], dQi_temp[idx]);
-}
-
-__global__ void accumulateDKVjKernel(float* dK, float* dV, const float* dKj_temp, const float* dVj_temp, int Bc, int d, int globalOffset) {
-    int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx &gt;= Bc * d) return;
-
-    atomicAdd(&amp;dK[globalOffset + idx], dKj_temp[idx]);
-    atomicAdd(&amp;dV[globalOffset + idx], dVj_temp[idx]);
-}</code></pre>
     </div>
 
     </div>

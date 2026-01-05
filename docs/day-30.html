@@ -163,34 +163,390 @@
         <div class="description">
             <h2>Description</h2>
             <div class="desc-content">
-This is a special day as it marks one month of coding GPU kernels daily!
-During this time, I have implemented various kernels supporting AMD GPUs, including:
-
-- Vector Addition
-- Vector-Matrix Multiplication
-- GELU Activation
-- Layer Normalization
-- Matrix Transpose
-- 2D Convolution
-- Flash Attention
-- Prefix Sum
-- Partial Sum
-- Parallel Merge
-- Sparse Matrix-Vector Multiplication
-- ROPE (Rotary Position Embedding)
-- Matrix Addition
-- rocBLAS Vector Operations
-- rocBLAS Matrix Multiplication
-
-Compiled and test on AMD MI250 - 128 Cores/Node + 1TB, 14 CPUs
-
-I made a blog for this special day : https://hamdi.bearblog.dev/my-one-month-journey-into-gpu-programming/
-
----
+<p>This is a special day as it marks one month of coding GPU kernels daily!
+During this time, I have implemented various kernels supporting AMD GPUs, including:</p>
+<ul>
+<li>Vector Addition</li>
+<li>Vector-Matrix Multiplication</li>
+<li>GELU Activation</li>
+<li>Layer Normalization</li>
+<li>Matrix Transpose</li>
+<li>2D Convolution</li>
+<li>Flash Attention</li>
+<li>Prefix Sum</li>
+<li>Partial Sum</li>
+<li>Parallel Merge</li>
+<li>Sparse Matrix-Vector Multiplication</li>
+<li>ROPE (Rotary Position Embedding)</li>
+<li>Matrix Addition</li>
+<li>rocBLAS Vector Operations</li>
+<li>rocBLAS Matrix Multiplication</li>
+</ul>
+<p>Compiled and test on AMD MI250 - 128 Cores/Node + 1TB, 14 CPUs</p>
+<p>I made a blog for this special day : https://hamdi.bearblog.dev/my-one-month-journey-into-gpu-programming/</p>
+<hr />
             </div>
         </div>
         
         <h2 style="margin-bottom: 1rem; color: #667eea;">Code Files</h2>
+
+    <div class="file-section">
+        <h3>sparse_MatrixVecMult_Hybrid_ELL_COO.cpp</h3>
+        <pre><code class="language-cpp">#include &lt;hip/hip_runtime.h&gt;
+#include &lt;iostream&gt;
+#include &lt;fstream&gt;
+#include &lt;iomanip&gt;
+
+#define HIP_CHECK(call) do { \
+    hipError_t err = call; \
+    if (err != hipSuccess) { \
+        fprintf(stderr, "HIP error in %s:%d: %s\n", __FILE__, __LINE__, \
+                hipGetErrorString(err)); \
+        exit(EXIT_FAILURE); \
+    } \
+} while(0)
+
+__global__ void ELL_kernel(const float* A, const float* X, float* data_ell,
+                           int* indices_ell, float* data_coo, int* row_coo,
+                           int* col_coo, float* output_matrix, const int threshold,
+                           const int N, const int M, int* global_coo_counter) {
+    int row = blockIdx.x * blockDim.x + threadIdx.x;
+    if (row &gt;= N) return;
+
+    int counter = 0;
+
+    // Process row
+    for (int col = 0; col &lt; M; ++col) {
+        float val = A[row * M + col];
+        if (val != 0) {
+            if (counter &lt; threshold) {
+                // ELL format storage
+                data_ell[counter * N + row] = val;
+                indices_ell[counter * N + row] = col;
+                counter++;
+            } else {
+                // COO format storage
+                int coo_index = atomicAdd(global_coo_counter, 1);  // Atomic global counter
+                data_coo[coo_index] = val;
+                row_coo[coo_index] = row;
+                col_coo[coo_index] = col;
+            }
+        }
+    }
+
+    // Fill unused ELL slots with zeros
+    for (int i = counter; i &lt; threshold; ++i) {
+        data_ell[i * N + row] = 0;
+        indices_ell[i * N + row] = -1;
+    }
+
+    // Matrix-vector multiplication using ELL format
+    float acc = 0.0f;
+    for (int p = 0; p &lt; threshold; ++p) {
+        int index = indices_ell[p * N + row];
+        if (index != -1) {
+            acc += data_ell[p * N + row] * X[index];
+        }
+    }
+
+    // Add COO contribution
+    for (int i = 0; i &lt; *global_coo_counter; ++i) {
+        if (row_coo[i] == row) {  // Verify this COO element belongs to the current row
+            acc += data_coo[i] * X[col_coo[i]];
+        }
+    }
+
+    output_matrix[row] = acc;
+}
+
+int main() {
+    const int N = 1000;        // Rows
+    const int M = 1000;        // Columns
+    const int threshold = 20;   // Threshold for ELL storage
+
+    // Host arrays - using dynamic allocation
+    float* A = new float[N * M];
+    float* data_ell = new float[N * threshold]();  // Initialize to zero
+    float* data_coo = new float[N * M]();
+    int* indices_ell = new int[N * threshold]();
+    int* row_coo = new int[N * M]();
+    int* col_coo = new int[N * M]();
+    float* X = new float[M];
+    float* output_matrix = new float[N];
+
+    int* d_global_coo_counter;
+    HIP_CHECK(hipMalloc(&amp;d_global_coo_counter, sizeof(int)));
+    HIP_CHECK(hipMemset(d_global_coo_counter, 0, sizeof(int)));  // Initialize to 0
+
+    // Initialize matrix A and vector X
+    for (int i = 0; i &lt; N; i++) {
+        for (int j = 0; j &lt; M; j++) {
+            A[i * M + j] = (i + j) % 3 == 0 ? i + j : 0;
+        }
+    }
+    for (int i = 0; i &lt; M; i++) {
+        X[i] = 1.0f;
+    }
+
+    // Device pointers
+    float *d_A, *d_X, *d_data_ell, *d_data_coo, *d_output_matrix;
+    int *d_indices_ell, *d_row_coo, *d_col_coo;
+
+    // Allocate device memory with error checking
+    HIP_CHECK(hipMalloc(&amp;d_A, N * M * sizeof(float)));
+    HIP_CHECK(hipMalloc(&amp;d_X, M * sizeof(float)));
+    HIP_CHECK(hipMalloc(&amp;d_data_ell, N * threshold * sizeof(float)));
+    HIP_CHECK(hipMalloc(&amp;d_data_coo, N * M * sizeof(float)));
+    HIP_CHECK(hipMalloc(&amp;d_indices_ell, N * threshold * sizeof(int)));
+    HIP_CHECK(hipMalloc(&amp;d_row_coo, N * M * sizeof(int)));
+    HIP_CHECK(hipMalloc(&amp;d_col_coo, N * M * sizeof(int)));
+    HIP_CHECK(hipMalloc(&amp;d_output_matrix, N * sizeof(float)));
+
+    // Copy data to device
+    HIP_CHECK(hipMemcpy(d_A, A, N * M * sizeof(float), hipMemcpyHostToDevice));
+    HIP_CHECK(hipMemcpy(d_X, X, M * sizeof(float), hipMemcpyHostToDevice));
+
+    // Get device properties
+    int device;
+    HIP_CHECK(hipGetDevice(&amp;device));
+    hipDeviceProp_t deviceProp;
+    HIP_CHECK(hipGetDeviceProperties(&amp;deviceProp, device));
+
+    // Configure kernel launch parameters
+    int block_size = 256;  // Use a reasonable block size
+    int num_blocks = (N + block_size - 1) / block_size;
+
+    // Setup timing
+    hipEvent_t start, stop;
+    HIP_CHECK(hipEventCreate(&amp;start));
+    HIP_CHECK(hipEventCreate(&amp;stop));
+
+    // Record start time
+    HIP_CHECK(hipEventRecord(start));
+
+    // Launch kernel
+    hipLaunchKernelGGL(ELL_kernel, dim3(num_blocks), dim3(block_size), 0, 0,
+                       d_A, d_X, d_data_ell, d_indices_ell, d_data_coo, d_row_coo,
+                       d_col_coo, d_output_matrix, threshold, N, M, d_global_coo_counter);
+
+    // Check for kernel launch errors
+    HIP_CHECK(hipGetLastError());
+    HIP_CHECK(hipDeviceSynchronize());
+
+    // Record stop time
+    HIP_CHECK(hipEventRecord(stop));
+    HIP_CHECK(hipEventSynchronize(stop));
+
+    float milliseconds = 0;
+    HIP_CHECK(hipEventElapsedTime(&amp;milliseconds, start, stop));
+    std::cout &lt;&lt; "HIP kernel time: " &lt;&lt; milliseconds / 1000.0 &lt;&lt; " seconds" &lt;&lt; std::endl;
+
+    // Copy results back to host
+    HIP_CHECK(hipMemcpy(data_ell, d_data_ell, N * threshold * sizeof(float), hipMemcpyDeviceToHost));
+    HIP_CHECK(hipMemcpy(data_coo, d_data_coo, N * M * sizeof(float), hipMemcpyDeviceToHost));
+    HIP_CHECK(hipMemcpy(indices_ell, d_indices_ell, N * threshold * sizeof(int), hipMemcpyDeviceToHost));
+    HIP_CHECK(hipMemcpy(row_coo, d_row_coo, N * M * sizeof(int), hipMemcpyDeviceToHost));
+    HIP_CHECK(hipMemcpy(col_coo, d_col_coo, N * M * sizeof(int), hipMemcpyDeviceToHost));
+    HIP_CHECK(hipMemcpy(output_matrix, d_output_matrix, N * sizeof(float), hipMemcpyDeviceToHost));
+
+    // Copy global_coo_counter back to host to verify the number of COO elements
+    int h_global_coo_counter;
+    HIP_CHECK(hipMemcpy(&amp;h_global_coo_counter, d_global_coo_counter, sizeof(int), hipMemcpyDeviceToHost));
+
+    // Print first 10 COO elements
+    for (int i = 0; i &lt; 10; ++i) {
+        std::cout &lt;&lt; "COO[" &lt;&lt; i &lt;&lt; "]: val = " &lt;&lt; data_coo[i] 
+                  &lt;&lt; ", row = " &lt;&lt; row_coo[i] 
+                  &lt;&lt; ", col = " &lt;&lt; col_coo[i] &lt;&lt; std::endl;
+    }
+
+    // Write results to file
+    std::ofstream output_file("hip_results.txt");
+    if (!output_file.is_open()) {
+        std::cerr &lt;&lt; "Failed to open output file!" &lt;&lt; std::endl;
+        return EXIT_FAILURE;
+    }
+    
+    for (int i = 0; i &lt; N; i++) {
+        output_file &lt;&lt; std::fixed &lt;&lt; std::setprecision(10) &lt;&lt; output_matrix[i] &lt;&lt; "\n";
+    }
+    output_file.close();
+    std::cout &lt;&lt; "Wrote " &lt;&lt; N &lt;&lt; " values to hip_results.txt" &lt;&lt; std::endl;
+
+    // Clean up events
+    HIP_CHECK(hipEventDestroy(start));
+    HIP_CHECK(hipEventDestroy(stop));
+
+    // Free device memory
+    HIP_CHECK(hipFree(d_A));
+    HIP_CHECK(hipFree(d_X));
+    HIP_CHECK(hipFree(d_data_ell));
+    HIP_CHECK(hipFree(d_data_coo));
+    HIP_CHECK(hipFree(d_indices_ell));
+    HIP_CHECK(hipFree(d_row_coo));
+    HIP_CHECK(hipFree(d_col_coo));
+    HIP_CHECK(hipFree(d_output_matrix));
+    HIP_CHECK(hipFree(d_global_coo_counter));
+
+    // Free host memory
+    delete[] A;
+    delete[] data_ell;
+    delete[] data_coo;
+    delete[] indices_ell;
+    delete[] row_coo;
+    delete[] col_coo;
+    delete[] X;
+    delete[] output_matrix;
+
+    return 0;
+} </code></pre>
+    </div>
+
+    <div class="file-section">
+        <h3>vector_add.cpp</h3>
+        <pre><code class="language-cpp">#include &lt;hip/hip_runtime.h&gt;
+#include &lt;iostream&gt;
+
+__global__ void vectorAdd(const float* A, const float* B, float* C, int N) {
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i &lt; N) {
+        C[i] = A[i] + B[i];
+    }
+}
+
+int main() {
+    const int N = 10;
+    float A[N], B[N], C[N];
+
+    // Initialize input arrays
+    for(int i = 0; i &lt; N; i++) {
+        A[i] = i;
+        B[i] = i * 2;
+    }
+
+    float *d_a, *d_b, *d_c;
+    hipMalloc(&amp;d_a, N * sizeof(float));
+    hipMalloc(&amp;d_b, N * sizeof(float));
+    hipMalloc(&amp;d_c, N * sizeof(float));
+
+    hipMemcpy(d_a, A, N * sizeof(float), hipMemcpyHostToDevice);
+    hipMemcpy(d_b, B, N * sizeof(float), hipMemcpyHostToDevice);
+
+    int blockSize = 256;
+    int gridSize = (N + blockSize - 1) / blockSize;  // Ceiling division
+    
+    hipLaunchKernelGGL(vectorAdd, 
+                       dim3(gridSize), 
+                       dim3(blockSize),
+                       0, 0,
+                       d_a, d_b, d_c, N);
+
+    hipMemcpy(C, d_c, N * sizeof(float), hipMemcpyDeviceToHost);
+
+    // Print results
+    for(int i = 0; i &lt; N; i++) {
+        std::cout &lt;&lt; A[i] &lt;&lt; " + " &lt;&lt; B[i] &lt;&lt; " = " &lt;&lt; C[i] &lt;&lt; std::endl;
+    }
+
+    hipFree(d_a);
+    hipFree(d_b);
+    hipFree(d_c);
+
+    return 0;
+} </code></pre>
+    </div>
+
+    <div class="file-section">
+        <h3>gelu.cpp</h3>
+        <pre><code class="language-cpp">#include &lt;hip/hip_runtime.h&gt;
+#include &lt;iostream&gt;
+#include &lt;cmath&gt;
+
+#define HIP_CHECK(call) do { \
+    hipError_t err = call; \
+    if (err != hipSuccess) { \
+        fprintf(stderr, "HIP error in %s:%d: %s\n", __FILE__, __LINE__, \
+                hipGetErrorString(err)); \
+        exit(EXIT_FAILURE); \
+    } \
+} while(0)
+
+__global__ void gelu_kernel(float* data, int size) {
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i &lt; size) {
+        data[i] = 0.5f * data[i] * (1.0f + erff(data[i] / sqrtf(2.0f)));
+    }
+}
+
+int main() {
+    const int N = 1000000;
+    float* A = new float[N];
+
+    // Initialize array with values
+    for (int i = 0; i &lt; N; i++) {
+        A[i] = -1.0f * (float)i / 2.0f;
+    }
+
+    // Print first 10 elements before GELU
+    std::cout &lt;&lt; "Before GELU:\n";
+    for (int i = 0; i &lt; 10; ++i) {
+        std::cout &lt;&lt; "A[" &lt;&lt; i &lt;&lt; "]: " &lt;&lt; A[i] &lt;&lt; std::endl;
+    }
+
+    // Allocate device memory
+    float* d_A;
+    HIP_CHECK(hipMalloc(&amp;d_A, N * sizeof(float)));
+    
+    // Copy data to device
+    HIP_CHECK(hipMemcpy(d_A, A, N * sizeof(float), hipMemcpyHostToDevice));
+
+    // Setup timing
+    hipEvent_t start, stop;
+    HIP_CHECK(hipEventCreate(&amp;start));
+    HIP_CHECK(hipEventCreate(&amp;stop));
+
+    // Record start time
+    HIP_CHECK(hipEventRecord(start));
+
+    // Launch kernel
+    dim3 threadsPerBlock(256);
+    dim3 blocksPerGrid((N + threadsPerBlock.x - 1) / threadsPerBlock.x);
+    hipLaunchKernelGGL(gelu_kernel, blocksPerGrid, threadsPerBlock, 0, 0, d_A, N);
+
+    // Check for kernel launch errors
+    HIP_CHECK(hipGetLastError());
+    HIP_CHECK(hipDeviceSynchronize());
+
+    // Record stop time
+    HIP_CHECK(hipEventRecord(stop));
+    HIP_CHECK(hipEventSynchronize(stop));
+
+    float milliseconds = 0;
+    HIP_CHECK(hipEventElapsedTime(&amp;milliseconds, start, stop));
+    std::cout &lt;&lt; "\nHIP kernel time: " &lt;&lt; milliseconds / 1000.0 &lt;&lt; " seconds" &lt;&lt; std::endl;
+
+    // Copy result back to host
+    HIP_CHECK(hipMemcpy(A, d_A, N * sizeof(float), hipMemcpyDeviceToHost));
+
+    // Print first 10 elements after GELU
+    std::cout &lt;&lt; "\nAfter GELU:\n";
+    for (int i = 0; i &lt; 10; ++i) {
+        std::cout &lt;&lt; "A[" &lt;&lt; i &lt;&lt; "]: " &lt;&lt; A[i] &lt;&lt; std::endl;
+    }
+
+    // Clean up events
+    HIP_CHECK(hipEventDestroy(start));
+    HIP_CHECK(hipEventDestroy(stop));
+
+    // Free device memory
+    HIP_CHECK(hipFree(d_A));
+
+    // Free host memory
+    delete[] A;
+
+    return 0;
+} </code></pre>
+    </div>
 
     <div class="file-section">
         <h3>vec_rocblas.cpp</h3>
@@ -376,114 +732,91 @@ int main() {
     </div>
 
     <div class="file-section">
-        <h3>matmul_rocblas.cpp</h3>
+        <h3>vector_matrix_mult.cpp</h3>
         <pre><code class="language-cpp">#include &lt;hip/hip_runtime.h&gt;
-#include &lt;rocblas/rocblas.h&gt;
 #include &lt;iostream&gt;
 
-#define HIP_CHECK(call) do { \
-    hipError_t err = call; \
-    if (err != hipSuccess) { \
-        fprintf(stderr, "HIP error in %s:%d: %s\n", __FILE__, __LINE__, \
-                hipGetErrorString(err)); \
-        exit(EXIT_FAILURE); \
-    } \
-} while(0)
-
-#define ROCBLAS_CHECK(call) do { \
-    rocblas_status status = call; \
-    if (status != rocblas_status_success) { \
-        fprintf(stderr, "rocBLAS error in %s:%d: %d\n", __FILE__, __LINE__, \
-                static_cast&lt;int&gt;(status)); \
-        exit(EXIT_FAILURE); \
-    } \
-} while(0)
-
-void printMatrix(const char* name, float* matrix, int rows, int cols) {
-    std::cout &lt;&lt; name &lt;&lt; ":\n";
-    for (int i = 0; i &lt; rows; i++) {
-        for (int j = 0; j &lt; cols; j++) {
-            std::cout &lt;&lt; matrix[i * cols + j] &lt;&lt; " ";
+__global__ void vectorMatrixMult(const float* A, const float* B, float* C, int N) {
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i &lt; N) {
+        float sum = 0.0f;
+        for (int j = 0; j &lt; N; j++) {
+            sum += A[i*N+j] * B[j];
         }
-        std::cout &lt;&lt; "\n";
+        C[i] = sum;
     }
-    std::cout &lt;&lt; std::endl;
 }
 
 int main() {
-    rocblas_handle handle;
-    ROCBLAS_CHECK(rocblas_create_handle(&amp;handle));
+    const int N = 10;
+    float *A, *B, *C;
 
-    int M = 2, N = 3, K = 4;
-    float *h_A, *h_B, *h_C;
-    h_A = new float[M * K];
-    h_B = new float[K * N];
-    h_C = new float[M * N];
+    // Initialize the input arrays
+    A = (float *)malloc(N * N * sizeof(float));
+    B = (float *)malloc(N * sizeof(float));
+    C = (float *)malloc(N * sizeof(float));
 
-    // Initialize matrices
-    for (int i = 0; i &lt; M; i++) {
-        for (int j = 0; j &lt; K; j++) {
-            h_A[i * K + j] = i + j;
-        }
-    }
-
-    for (int i = 0; i &lt; K; i++) {
+    // Initialize matrices with values
+    for (int i = 0; i &lt; N; i++) {
         for (int j = 0; j &lt; N; j++) {
-            h_B[i * N + j] = i + j;
+            A[i * N + j] = 1.0f;
         }
+        B[i] = 2.0f;
+        C[i] = 0.0f;
     }
 
-    // Allocate device memory
-    float *d_A, *d_B, *d_C;
-    HIP_CHECK(hipMalloc(&amp;d_A, M * K * sizeof(float)));
-    HIP_CHECK(hipMalloc(&amp;d_B, K * N * sizeof(float)));
-    HIP_CHECK(hipMalloc(&amp;d_C, M * N * sizeof(float)));
+    float *d_a, *d_b, *d_c;
+    hipMalloc(&amp;d_a, N * N * sizeof(float));
+    hipMalloc(&amp;d_b, N * sizeof(float));
+    hipMalloc(&amp;d_c, N * sizeof(float));
 
-    // Copy matrices to device
-    HIP_CHECK(hipMemcpy(d_A, h_A, M * K * sizeof(float), hipMemcpyHostToDevice));
-    HIP_CHECK(hipMemcpy(d_B, h_B, K * N * sizeof(float), hipMemcpyHostToDevice));
+    hipMemcpy(d_a, A, N * N * sizeof(float), hipMemcpyHostToDevice);
+    hipMemcpy(d_b, B, N * sizeof(float), hipMemcpyHostToDevice);
 
-    // Set up and perform matrix multiplication: C = alpha*A*B + beta*C
-    const float alpha = 1.0f;
-    const float beta = 0.0f;
-
-    // Note: rocBLAS uses column-major order, so we transpose the operation
-    // C = A*B becomes C' = B'*A'
-    ROCBLAS_CHECK(rocblas_sgemm(handle,
-                               rocblas_operation_none,  // op(A) = A
-                               rocblas_operation_none,  // op(B) = B
-                               N, M, K,                 // m, n, k
-                               &amp;alpha,                  // alpha
-                               d_B, N,                  // B, ldb
-                               d_A, K,                  // A, lda
-                               &amp;beta,                   // beta
-                               d_C, N));               // C, ldc
-
-    // Copy result back to host
-    HIP_CHECK(hipMemcpy(h_C, d_C, M * N * sizeof(float), hipMemcpyDeviceToHost));
-
-    // Print matrices
-    printMatrix("Matrix A", h_A, M, K);
-    printMatrix("Matrix B", h_B, K, N);
+    int blockSize = 256;
+    int gridSize = (N + blockSize - 1) / blockSize;  // Ceiling division
     
-    // Convert from column-major to row-major for printing
-    float* h_C_row = new float[M * N];
-    for (int i = 0; i &lt; M; i++) {
+    // Launch kernel using hipLaunchKernelGGL
+    hipLaunchKernelGGL(vectorMatrixMult,
+                       dim3(gridSize),
+                       dim3(blockSize),
+                       0, 0,
+                       d_a, d_b, d_c, N);
+    
+    hipDeviceSynchronize();
+
+    hipMemcpy(C, d_c, N * sizeof(float), hipMemcpyDeviceToHost);
+
+    // Print matrix A
+    std::cout &lt;&lt; "A:\n";
+    for (int i = 0; i &lt; N; i++) {
         for (int j = 0; j &lt; N; j++) {
-            h_C_row[i * N + j] = h_C[j * M + i];
+            printf("%.2f ", A[i * N + j]);
         }
+        printf("\n");
     }
-    printMatrix("Matrix C = A * B", h_C_row, M, N);
+
+    // Print vector C (result)
+    std::cout &lt;&lt; "\nC:\n";
+    for (int i = 0; i &lt; N; i++) {
+        printf("%.2f ", C[i]);
+    }
+    printf("\n");
+
+    // Print vector B
+    std::cout &lt;&lt; "\nB:\n";
+    for (int i = 0; i &lt; N; i++) {
+        printf("%.2f ", B[i]);
+    }
+    printf("\n");
 
     // Cleanup
-    delete[] h_A;
-    delete[] h_B;
-    delete[] h_C;
-    delete[] h_C_row;
-    HIP_CHECK(hipFree(d_A));
-    HIP_CHECK(hipFree(d_B));
-    HIP_CHECK(hipFree(d_C));
-    ROCBLAS_CHECK(rocblas_destroy_handle(handle));
+    hipFree(d_a);
+    hipFree(d_b);
+    hipFree(d_c);
+    free(A);
+    free(B);
+    free(C);
 
     return 0;
 } </code></pre>
@@ -631,83 +964,6 @@ int main() {
     HIP_CHECK(hipFree(d_A));
     HIP_CHECK(hipFree(d_B));
     HIP_CHECK(hipFree(d_C));
-
-    return 0;
-} </code></pre>
-    </div>
-
-    <div class="file-section">
-        <h3>partial_sum.cpp</h3>
-        <pre><code class="language-cpp">#include &lt;hip/hip_runtime.h&gt;
-#include &lt;stdio.h&gt;
-
-__global__ void partialSumKernel(int *input, int *output, int n) {
-    // Shared memory 
-    HIP_DYNAMIC_SHARED(int, sharedMemory);
-    
-    int tid = threadIdx.x;
-    int index = blockIdx.x * blockDim.x + tid;
-
-    if (index &lt; n/2) {  // Changed condition to handle half the array size
-        // Load input into shared memory and optimize the loading to do coalescing 
-        sharedMemory[tid] = input[2*index] + input[2*index + 1];
-        __syncthreads();
-
-        // Perform inclusive scan in shared memory
-        for (int stride = 1; stride &lt; blockDim.x; stride *= 2) {
-            int temp = 0;
-            if (tid &gt;= stride) {
-                temp = sharedMemory[tid - stride];
-            }
-            __syncthreads();
-            sharedMemory[tid] += temp;
-            __syncthreads();
-        }
-
-        // Write result to global memory
-        output[index] = sharedMemory[tid];
-    }
-}
-
-int main() {
-    const int N = 16;
-    const int blockSize = 8;
-
-    int h_input[N] = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16};
-    int h_output[N/2];  // Changed size to N/2 as we're summing pairs
-
-    int *d_input, *d_output;
-    size_t input_size = N * sizeof(int);
-    size_t output_size = (N/2) * sizeof(int);
-
-    hipMalloc(&amp;d_input, input_size);
-    hipMalloc(&amp;d_output, output_size);
-
-    hipMemcpy(d_input, h_input, input_size, hipMemcpyHostToDevice);
-
-    // Launch kernel using hipLaunchKernelGGL
-    hipLaunchKernelGGL(partialSumKernel,
-                       dim3(1),  // Only need one block for this small example
-                       dim3(blockSize),
-                       blockSize * sizeof(int), 0,
-                       d_input, d_output, N);
-    
-    hipDeviceSynchronize();
-
-    hipMemcpy(h_output, d_output, output_size, hipMemcpyDeviceToHost);
-
-    printf("Input: ");
-    for (int i = 0; i &lt; N; i++) {
-        printf("%d ", h_input[i]);
-    }
-    printf("\nOutput (sum of adjacent pairs): ");
-    for (int i = 0; i &lt; N/2; i++) {
-        printf("%d ", h_output[i]);
-    }
-    printf("\n");
-
-    hipFree(d_input);
-    hipFree(d_output);
 
     return 0;
 } </code></pre>
@@ -968,137 +1224,6 @@ int main() {
     </div>
 
     <div class="file-section">
-        <h3>prefix_sum.cpp</h3>
-        <pre><code class="language-cpp">#include &lt;hip/hip_runtime.h&gt;
-#include &lt;iostream&gt;
-
-#define LOAD_SIZE 32
-
-__global__ void prefixsum_kernel(float* A, float* C, int N) {
-    int threadId = threadIdx.x;
-    int i = 2 * blockDim.x * blockIdx.x + threadId;
-
-    // Load in shared memory
-    __shared__ float S_A[LOAD_SIZE];
-    if (i &lt; N) {
-        S_A[threadId] = A[i];
-    }
-    if (i + blockDim.x &lt; N) {
-        S_A[threadId + blockDim.x] = A[i + blockDim.x];
-    }
-    __syncthreads();
-
-    // Up-sweep (reduce) phase
-    for (int jump = 1; jump &lt;= blockDim.x; jump *= 2) {
-        __syncthreads();
-        int j = jump * 2 * (threadId + 1) - 1;
-        if (j &lt; LOAD_SIZE) {
-            S_A[j] += S_A[j - jump];
-        }
-    }
-    __syncthreads();
-
-    // Down-sweep phase
-    for (int jump = LOAD_SIZE/4; jump &gt;= 1; jump /= 2) {
-        __syncthreads();
-        int j = jump * 2 * (threadId + 1) - 1;
-        if (j &lt; LOAD_SIZE - jump) {
-            S_A[j + jump] += S_A[j];
-        }
-        __syncthreads();
-    }
-
-    // Store results back to global memory
-    if (i &lt; N) {
-        C[i] = S_A[threadId];
-    }
-    if (i + blockDim.x &lt; N) {
-        C[i + blockDim.x] = S_A[threadId + blockDim.x];
-    }
-    __syncthreads();
-}
-
-void checkHipError(const char* message) {
-    hipError_t error = hipGetLastError();
-    if (error != hipSuccess) {
-        printf("HIP error (%s): %s\n", message, hipGetErrorString(error));
-        exit(-1);
-    }
-}
-
-int main() {
-    const int N = 10;
-    float A[N], C[N];
-
-    // Initialize input array
-    for (int i = 0; i &lt; N; i++) {
-        A[i] = i + 1.0f;
-    }
-
-    // Print input array
-    printf("Input Array A:\n");
-    for (int i = 0; i &lt; N; i++) {
-        printf("%.2f ", A[i]);
-    }
-    printf("\n");
-
-    // Allocate device memory
-    float *d_A, *d_C;
-    hipMalloc(&amp;d_A, N * sizeof(float));
-    hipMalloc(&amp;d_C, N * sizeof(float));
-
-    // Copy input data to device
-    hipMemcpy(d_A, A, N * sizeof(float), hipMemcpyHostToDevice);
-    checkHipError("Failed to copy input data to device");
-
-    // Launch kernel
-    dim3 dimBlock(16);  // Using 16 threads per block for this small example
-    dim3 dimGrid((N + dimBlock.x - 1) / dimBlock.x);
-
-    hipLaunchKernelGGL(prefixsum_kernel,
-                       dimGrid,
-                       dimBlock,
-                       0, 0,
-                       d_A, d_C, N);
-    
-    checkHipError("Failed to execute the kernel");
-    hipDeviceSynchronize();
-
-    // Copy results back to host
-    hipMemcpy(C, d_C, N * sizeof(float), hipMemcpyDeviceToHost);
-    checkHipError("Failed to copy output data to host");
-
-    // Print results
-    printf("\nPrefix Sum Results C:\n");
-    for (int i = 0; i &lt; N; i++) {
-        printf("%.2f ", C[i]);
-    }
-    printf("\n");
-
-    // Verify results
-    printf("\nVerification:\n");
-    float sum = 0.0f;
-    bool correct = true;
-    for (int i = 0; i &lt; N; i++) {
-        sum += A[i];
-        if (fabs(C[i] - sum) &gt; 1e-5) {
-            printf("Mismatch at position %d: expected %.2f, got %.2f\n", i, sum, C[i]);
-            correct = false;
-        }
-    }
-    if (correct) {
-        printf("All results match the expected values!\n");
-    }
-
-    // Cleanup
-    hipFree(d_A);
-    hipFree(d_C);
-
-    return 0;
-} </code></pre>
-    </div>
-
-    <div class="file-section">
         <h3>rope_hip.cpp</h3>
         <pre><code class="language-cpp">#include &lt;hip/hip_runtime.h&gt;
 #include &lt;math.h&gt;
@@ -1262,7 +1387,7 @@ int main() {
     </div>
 
     <div class="file-section">
-        <h3>matrix_transpose.cpp</h3>
+        <h3>layer_norm.cpp</h3>
         <pre><code class="language-cpp">#include &lt;hip/hip_runtime.h&gt;
 #include &lt;iostream&gt;
 #include &lt;cmath&gt;
@@ -1424,358 +1549,162 @@ int main() {
     </div>
 
     <div class="file-section">
-        <h3>gelu.cpp</h3>
+        <h3>matrix_transpose.cpp</h3>
         <pre><code class="language-cpp">#include &lt;hip/hip_runtime.h&gt;
 #include &lt;iostream&gt;
 #include &lt;cmath&gt;
+#include &lt;random&gt;
 
-#define HIP_CHECK(call) do { \
-    hipError_t err = call; \
-    if (err != hipSuccess) { \
-        fprintf(stderr, "HIP error in %s:%d: %s\n", __FILE__, __LINE__, \
-                hipGetErrorString(err)); \
-        exit(EXIT_FAILURE); \
-    } \
-} while(0)
+__global__ void LayerNorm(const float* A, float* B, int rows, int cols) {
+    // Calculate row index
+    int row = blockIdx.x;
 
-__global__ void gelu_kernel(float* data, int size) {
-    int i = blockIdx.x * blockDim.x + threadIdx.x;
-    if (i &lt; size) {
-        data[i] = 0.5f * data[i] * (1.0f + erff(data[i] / sqrtf(2.0f)));
+    if (row &lt; rows) {
+        extern __shared__ float shared[];
+        float* row_data = &amp;shared[0];
+        float* temp_storage = &amp;shared[cols];
+        
+        int tid = threadIdx.x;
+
+        // Copy row data to shared memory
+        for (int col = tid; col &lt; cols; col += blockDim.x) {
+            row_data[col] = A[row * cols + col];
+        }
+        __syncthreads();
+
+        // Compute mean using parallel reduction
+        float thread_sum = 0.0f;
+        for (int col = tid; col &lt; cols; col += blockDim.x) {
+            thread_sum += row_data[col];
+        }
+        temp_storage[tid] = thread_sum;
+        __syncthreads();
+        
+        // Reduce within block
+        for (int stride = blockDim.x/2; stride &gt; 0; stride &gt;&gt;= 1) {
+            if (tid &lt; stride) {
+                temp_storage[tid] += temp_storage[tid + stride];
+            }
+            __syncthreads();
+        }
+        
+        float mean = temp_storage[0] / cols;
+        
+        // Compute variance using parallel reduction
+        thread_sum = 0.0f;
+        for (int col = tid; col &lt; cols; col += blockDim.x) {
+            float diff = row_data[col] - mean;
+            thread_sum += diff * diff;
+        }
+        temp_storage[tid] = thread_sum;
+        __syncthreads();
+        
+        // Reduce within block
+        for (int stride = blockDim.x/2; stride &gt; 0; stride &gt;&gt;= 1) {
+            if (tid &lt; stride) {
+                temp_storage[tid] += temp_storage[tid + stride];
+            }
+            __syncthreads();
+        }
+        
+        float variance = temp_storage[0] / cols;
+        float stddev = sqrtf(variance + 1e-5f);
+
+        // Normalize
+        for (int col = tid; col &lt; cols; col += blockDim.x) {
+            B[row * cols + col] = (row_data[col] - mean) / stddev;
+        }
     }
 }
 
 int main() {
-    const int N = 1000000;
-    float* A = new float[N];
+    const int rows = 10, cols = 10;
+    float *A, *B;
 
-    // Initialize array with values
-    for (int i = 0; i &lt; N; i++) {
-        A[i] = -1.0f * (float)i / 2.0f;
-    }
+    // Allocate host memory
+    A = (float*)malloc(rows * cols * sizeof(float));
+    B = (float*)malloc(rows * cols * sizeof(float));
 
-    // Print first 10 elements before GELU
-    std::cout &lt;&lt; "Before GELU:\n";
-    for (int i = 0; i &lt; 10; ++i) {
-        std::cout &lt;&lt; "A[" &lt;&lt; i &lt;&lt; "]: " &lt;&lt; A[i] &lt;&lt; std::endl;
+    // Initialize input matrix with random values between 0 and 1
+    std::random_device rd;
+    std::mt19937 gen(rd());
+    std::uniform_real_distribution&lt;float&gt; dis(0.0f, 1.0f);
+    
+    for (int i = 0; i &lt; rows; i++) {
+        for (int j = 0; j &lt; cols; j++) {
+            A[i * cols + j] = dis(gen);
+        }
     }
 
     // Allocate device memory
-    float* d_A;
-    HIP_CHECK(hipMalloc(&amp;d_A, N * sizeof(float)));
-    
+    float *d_a, *d_b;
+    hipMalloc(&amp;d_a, rows * cols * sizeof(float));
+    hipMalloc(&amp;d_b, rows * cols * sizeof(float));
+
     // Copy data to device
-    HIP_CHECK(hipMemcpy(d_A, A, N * sizeof(float), hipMemcpyHostToDevice));
-
-    // Setup timing
-    hipEvent_t start, stop;
-    HIP_CHECK(hipEventCreate(&amp;start));
-    HIP_CHECK(hipEventCreate(&amp;stop));
-
-    // Record start time
-    HIP_CHECK(hipEventRecord(start));
+    hipMemcpy(d_a, A, rows * cols * sizeof(float), hipMemcpyHostToDevice);
 
     // Launch kernel
-    dim3 threadsPerBlock(256);
-    dim3 blocksPerGrid((N + threadsPerBlock.x - 1) / threadsPerBlock.x);
-    hipLaunchKernelGGL(gelu_kernel, blocksPerGrid, threadsPerBlock, 0, 0, d_A, N);
+    int threadsPerBlock = 32;  // Reduced thread count since we have small matrices
+    dim3 blockDim(threadsPerBlock);
+    dim3 gridDim(rows);  // One block per row
+    size_t shared_memory_size = (cols + threadsPerBlock) * sizeof(float);
 
-    // Check for kernel launch errors
-    HIP_CHECK(hipGetLastError());
-    HIP_CHECK(hipDeviceSynchronize());
-
-    // Record stop time
-    HIP_CHECK(hipEventRecord(stop));
-    HIP_CHECK(hipEventSynchronize(stop));
-
-    float milliseconds = 0;
-    HIP_CHECK(hipEventElapsedTime(&amp;milliseconds, start, stop));
-    std::cout &lt;&lt; "\nHIP kernel time: " &lt;&lt; milliseconds / 1000.0 &lt;&lt; " seconds" &lt;&lt; std::endl;
+    hipLaunchKernelGGL(LayerNorm,
+                       gridDim,
+                       blockDim,
+                       shared_memory_size, 0,
+                       d_a, d_b, rows, cols);
+    
+    // Synchronize device
+    hipDeviceSynchronize();
 
     // Copy result back to host
-    HIP_CHECK(hipMemcpy(A, d_A, N * sizeof(float), hipMemcpyDeviceToHost));
-
-    // Print first 10 elements after GELU
-    std::cout &lt;&lt; "\nAfter GELU:\n";
-    for (int i = 0; i &lt; 10; ++i) {
-        std::cout &lt;&lt; "A[" &lt;&lt; i &lt;&lt; "]: " &lt;&lt; A[i] &lt;&lt; std::endl;
-    }
-
-    // Clean up events
-    HIP_CHECK(hipEventDestroy(start));
-    HIP_CHECK(hipEventDestroy(stop));
-
-    // Free device memory
-    HIP_CHECK(hipFree(d_A));
-
-    // Free host memory
-    delete[] A;
-
-    return 0;
-} </code></pre>
-    </div>
-
-    <div class="file-section">
-        <h3>vector_add.cpp</h3>
-        <pre><code class="language-cpp">#include &lt;hip/hip_runtime.h&gt;
-#include &lt;iostream&gt;
-
-__global__ void vectorAdd(const float* A, const float* B, float* C, int N) {
-    int i = blockIdx.x * blockDim.x + threadIdx.x;
-    if (i &lt; N) {
-        C[i] = A[i] + B[i];
-    }
-}
-
-int main() {
-    const int N = 10;
-    float A[N], B[N], C[N];
-
-    // Initialize input arrays
-    for(int i = 0; i &lt; N; i++) {
-        A[i] = i;
-        B[i] = i * 2;
-    }
-
-    float *d_a, *d_b, *d_c;
-    hipMalloc(&amp;d_a, N * sizeof(float));
-    hipMalloc(&amp;d_b, N * sizeof(float));
-    hipMalloc(&amp;d_c, N * sizeof(float));
-
-    hipMemcpy(d_a, A, N * sizeof(float), hipMemcpyHostToDevice);
-    hipMemcpy(d_b, B, N * sizeof(float), hipMemcpyHostToDevice);
-
-    int blockSize = 256;
-    int gridSize = (N + blockSize - 1) / blockSize;  // Ceiling division
-    
-    hipLaunchKernelGGL(vectorAdd, 
-                       dim3(gridSize), 
-                       dim3(blockSize),
-                       0, 0,
-                       d_a, d_b, d_c, N);
-
-    hipMemcpy(C, d_c, N * sizeof(float), hipMemcpyDeviceToHost);
+    hipMemcpy(B, d_b, rows * cols * sizeof(float), hipMemcpyDeviceToHost);
 
     // Print results
-    for(int i = 0; i &lt; N; i++) {
-        std::cout &lt;&lt; A[i] &lt;&lt; " + " &lt;&lt; B[i] &lt;&lt; " = " &lt;&lt; C[i] &lt;&lt; std::endl;
+    printf("Input Matrix A:\n");
+    for (int i = 0; i &lt; rows; i++) {
+        for (int j = 0; j &lt; cols; j++) {
+            printf("%.4f ", A[i * cols + j]);
+        }
+        printf("\n");
     }
 
+    printf("\nNormalized Matrix B:\n");
+    for (int i = 0; i &lt; rows; i++) {
+        for (int j = 0; j &lt; cols; j++) {
+            printf("%.4f ", B[i * cols + j]);
+        }
+        printf("\n");
+    }
+
+    // Verify normalization (mean should be ~0, variance should be ~1)
+    for (int i = 0; i &lt; rows; i++) {
+        float row_mean = 0.0f;
+        float row_var = 0.0f;
+        
+        // Calculate mean
+        for (int j = 0; j &lt; cols; j++) {
+            row_mean += B[i * cols + j];
+        }
+        row_mean /= cols;
+        
+        // Calculate variance
+        for (int j = 0; j &lt; cols; j++) {
+            float diff = B[i * cols + j] - row_mean;
+            row_var += diff * diff;
+        }
+        row_var /= cols;
+        
+        printf("Row %d: Mean = %.6f, Variance = %.6f\n", i, row_mean, row_var);
+    }
+
+    // Free memory
     hipFree(d_a);
     hipFree(d_b);
-    hipFree(d_c);
-
-    return 0;
-} </code></pre>
-    </div>
-
-    <div class="file-section">
-        <h3>sparse_MatrixVecMult_Hybrid_ELL_COO.cpp</h3>
-        <pre><code class="language-cpp">#include &lt;hip/hip_runtime.h&gt;
-#include &lt;iostream&gt;
-#include &lt;fstream&gt;
-#include &lt;iomanip&gt;
-
-#define HIP_CHECK(call) do { \
-    hipError_t err = call; \
-    if (err != hipSuccess) { \
-        fprintf(stderr, "HIP error in %s:%d: %s\n", __FILE__, __LINE__, \
-                hipGetErrorString(err)); \
-        exit(EXIT_FAILURE); \
-    } \
-} while(0)
-
-__global__ void ELL_kernel(const float* A, const float* X, float* data_ell,
-                           int* indices_ell, float* data_coo, int* row_coo,
-                           int* col_coo, float* output_matrix, const int threshold,
-                           const int N, const int M, int* global_coo_counter) {
-    int row = blockIdx.x * blockDim.x + threadIdx.x;
-    if (row &gt;= N) return;
-
-    int counter = 0;
-
-    // Process row
-    for (int col = 0; col &lt; M; ++col) {
-        float val = A[row * M + col];
-        if (val != 0) {
-            if (counter &lt; threshold) {
-                // ELL format storage
-                data_ell[counter * N + row] = val;
-                indices_ell[counter * N + row] = col;
-                counter++;
-            } else {
-                // COO format storage
-                int coo_index = atomicAdd(global_coo_counter, 1);  // Atomic global counter
-                data_coo[coo_index] = val;
-                row_coo[coo_index] = row;
-                col_coo[coo_index] = col;
-            }
-        }
-    }
-
-    // Fill unused ELL slots with zeros
-    for (int i = counter; i &lt; threshold; ++i) {
-        data_ell[i * N + row] = 0;
-        indices_ell[i * N + row] = -1;
-    }
-
-    // Matrix-vector multiplication using ELL format
-    float acc = 0.0f;
-    for (int p = 0; p &lt; threshold; ++p) {
-        int index = indices_ell[p * N + row];
-        if (index != -1) {
-            acc += data_ell[p * N + row] * X[index];
-        }
-    }
-
-    // Add COO contribution
-    for (int i = 0; i &lt; *global_coo_counter; ++i) {
-        if (row_coo[i] == row) {  // Verify this COO element belongs to the current row
-            acc += data_coo[i] * X[col_coo[i]];
-        }
-    }
-
-    output_matrix[row] = acc;
-}
-
-int main() {
-    const int N = 1000;        // Rows
-    const int M = 1000;        // Columns
-    const int threshold = 20;   // Threshold for ELL storage
-
-    // Host arrays - using dynamic allocation
-    float* A = new float[N * M];
-    float* data_ell = new float[N * threshold]();  // Initialize to zero
-    float* data_coo = new float[N * M]();
-    int* indices_ell = new int[N * threshold]();
-    int* row_coo = new int[N * M]();
-    int* col_coo = new int[N * M]();
-    float* X = new float[M];
-    float* output_matrix = new float[N];
-
-    int* d_global_coo_counter;
-    HIP_CHECK(hipMalloc(&amp;d_global_coo_counter, sizeof(int)));
-    HIP_CHECK(hipMemset(d_global_coo_counter, 0, sizeof(int)));  // Initialize to 0
-
-    // Initialize matrix A and vector X
-    for (int i = 0; i &lt; N; i++) {
-        for (int j = 0; j &lt; M; j++) {
-            A[i * M + j] = (i + j) % 3 == 0 ? i + j : 0;
-        }
-    }
-    for (int i = 0; i &lt; M; i++) {
-        X[i] = 1.0f;
-    }
-
-    // Device pointers
-    float *d_A, *d_X, *d_data_ell, *d_data_coo, *d_output_matrix;
-    int *d_indices_ell, *d_row_coo, *d_col_coo;
-
-    // Allocate device memory with error checking
-    HIP_CHECK(hipMalloc(&amp;d_A, N * M * sizeof(float)));
-    HIP_CHECK(hipMalloc(&amp;d_X, M * sizeof(float)));
-    HIP_CHECK(hipMalloc(&amp;d_data_ell, N * threshold * sizeof(float)));
-    HIP_CHECK(hipMalloc(&amp;d_data_coo, N * M * sizeof(float)));
-    HIP_CHECK(hipMalloc(&amp;d_indices_ell, N * threshold * sizeof(int)));
-    HIP_CHECK(hipMalloc(&amp;d_row_coo, N * M * sizeof(int)));
-    HIP_CHECK(hipMalloc(&amp;d_col_coo, N * M * sizeof(int)));
-    HIP_CHECK(hipMalloc(&amp;d_output_matrix, N * sizeof(float)));
-
-    // Copy data to device
-    HIP_CHECK(hipMemcpy(d_A, A, N * M * sizeof(float), hipMemcpyHostToDevice));
-    HIP_CHECK(hipMemcpy(d_X, X, M * sizeof(float), hipMemcpyHostToDevice));
-
-    // Get device properties
-    int device;
-    HIP_CHECK(hipGetDevice(&amp;device));
-    hipDeviceProp_t deviceProp;
-    HIP_CHECK(hipGetDeviceProperties(&amp;deviceProp, device));
-
-    // Configure kernel launch parameters
-    int block_size = 256;  // Use a reasonable block size
-    int num_blocks = (N + block_size - 1) / block_size;
-
-    // Setup timing
-    hipEvent_t start, stop;
-    HIP_CHECK(hipEventCreate(&amp;start));
-    HIP_CHECK(hipEventCreate(&amp;stop));
-
-    // Record start time
-    HIP_CHECK(hipEventRecord(start));
-
-    // Launch kernel
-    hipLaunchKernelGGL(ELL_kernel, dim3(num_blocks), dim3(block_size), 0, 0,
-                       d_A, d_X, d_data_ell, d_indices_ell, d_data_coo, d_row_coo,
-                       d_col_coo, d_output_matrix, threshold, N, M, d_global_coo_counter);
-
-    // Check for kernel launch errors
-    HIP_CHECK(hipGetLastError());
-    HIP_CHECK(hipDeviceSynchronize());
-
-    // Record stop time
-    HIP_CHECK(hipEventRecord(stop));
-    HIP_CHECK(hipEventSynchronize(stop));
-
-    float milliseconds = 0;
-    HIP_CHECK(hipEventElapsedTime(&amp;milliseconds, start, stop));
-    std::cout &lt;&lt; "HIP kernel time: " &lt;&lt; milliseconds / 1000.0 &lt;&lt; " seconds" &lt;&lt; std::endl;
-
-    // Copy results back to host
-    HIP_CHECK(hipMemcpy(data_ell, d_data_ell, N * threshold * sizeof(float), hipMemcpyDeviceToHost));
-    HIP_CHECK(hipMemcpy(data_coo, d_data_coo, N * M * sizeof(float), hipMemcpyDeviceToHost));
-    HIP_CHECK(hipMemcpy(indices_ell, d_indices_ell, N * threshold * sizeof(int), hipMemcpyDeviceToHost));
-    HIP_CHECK(hipMemcpy(row_coo, d_row_coo, N * M * sizeof(int), hipMemcpyDeviceToHost));
-    HIP_CHECK(hipMemcpy(col_coo, d_col_coo, N * M * sizeof(int), hipMemcpyDeviceToHost));
-    HIP_CHECK(hipMemcpy(output_matrix, d_output_matrix, N * sizeof(float), hipMemcpyDeviceToHost));
-
-    // Copy global_coo_counter back to host to verify the number of COO elements
-    int h_global_coo_counter;
-    HIP_CHECK(hipMemcpy(&amp;h_global_coo_counter, d_global_coo_counter, sizeof(int), hipMemcpyDeviceToHost));
-
-    // Print first 10 COO elements
-    for (int i = 0; i &lt; 10; ++i) {
-        std::cout &lt;&lt; "COO[" &lt;&lt; i &lt;&lt; "]: val = " &lt;&lt; data_coo[i] 
-                  &lt;&lt; ", row = " &lt;&lt; row_coo[i] 
-                  &lt;&lt; ", col = " &lt;&lt; col_coo[i] &lt;&lt; std::endl;
-    }
-
-    // Write results to file
-    std::ofstream output_file("hip_results.txt");
-    if (!output_file.is_open()) {
-        std::cerr &lt;&lt; "Failed to open output file!" &lt;&lt; std::endl;
-        return EXIT_FAILURE;
-    }
-    
-    for (int i = 0; i &lt; N; i++) {
-        output_file &lt;&lt; std::fixed &lt;&lt; std::setprecision(10) &lt;&lt; output_matrix[i] &lt;&lt; "\n";
-    }
-    output_file.close();
-    std::cout &lt;&lt; "Wrote " &lt;&lt; N &lt;&lt; " values to hip_results.txt" &lt;&lt; std::endl;
-
-    // Clean up events
-    HIP_CHECK(hipEventDestroy(start));
-    HIP_CHECK(hipEventDestroy(stop));
-
-    // Free device memory
-    HIP_CHECK(hipFree(d_A));
-    HIP_CHECK(hipFree(d_X));
-    HIP_CHECK(hipFree(d_data_ell));
-    HIP_CHECK(hipFree(d_data_coo));
-    HIP_CHECK(hipFree(d_indices_ell));
-    HIP_CHECK(hipFree(d_row_coo));
-    HIP_CHECK(hipFree(d_col_coo));
-    HIP_CHECK(hipFree(d_output_matrix));
-    HIP_CHECK(hipFree(d_global_coo_counter));
-
-    // Free host memory
-    delete[] A;
-    delete[] data_ell;
-    delete[] data_coo;
-    delete[] indices_ell;
-    delete[] row_coo;
-    delete[] col_coo;
-    delete[] X;
-    delete[] output_matrix;
+    free(A);
+    free(B);
 
     return 0;
 } </code></pre>
@@ -1951,253 +1880,322 @@ int main() {
     </div>
 
     <div class="file-section">
-        <h3>layer_norm.cpp</h3>
+        <h3>prefix_sum.cpp</h3>
         <pre><code class="language-cpp">#include &lt;hip/hip_runtime.h&gt;
 #include &lt;iostream&gt;
-#include &lt;cmath&gt;
-#include &lt;random&gt;
 
-__global__ void LayerNorm(const float* A, float* B, int rows, int cols) {
-    // Calculate row index
-    int row = blockIdx.x;
+#define LOAD_SIZE 32
 
-    if (row &lt; rows) {
-        extern __shared__ float shared[];
-        float* row_data = &amp;shared[0];
-        float* temp_storage = &amp;shared[cols];
-        
-        int tid = threadIdx.x;
+__global__ void prefixsum_kernel(float* A, float* C, int N) {
+    int threadId = threadIdx.x;
+    int i = 2 * blockDim.x * blockIdx.x + threadId;
 
-        // Copy row data to shared memory
-        for (int col = tid; col &lt; cols; col += blockDim.x) {
-            row_data[col] = A[row * cols + col];
+    // Load in shared memory
+    __shared__ float S_A[LOAD_SIZE];
+    if (i &lt; N) {
+        S_A[threadId] = A[i];
+    }
+    if (i + blockDim.x &lt; N) {
+        S_A[threadId + blockDim.x] = A[i + blockDim.x];
+    }
+    __syncthreads();
+
+    // Up-sweep (reduce) phase
+    for (int jump = 1; jump &lt;= blockDim.x; jump *= 2) {
+        __syncthreads();
+        int j = jump * 2 * (threadId + 1) - 1;
+        if (j &lt; LOAD_SIZE) {
+            S_A[j] += S_A[j - jump];
+        }
+    }
+    __syncthreads();
+
+    // Down-sweep phase
+    for (int jump = LOAD_SIZE/4; jump &gt;= 1; jump /= 2) {
+        __syncthreads();
+        int j = jump * 2 * (threadId + 1) - 1;
+        if (j &lt; LOAD_SIZE - jump) {
+            S_A[j + jump] += S_A[j];
         }
         __syncthreads();
+    }
 
-        // Compute mean using parallel reduction
-        float thread_sum = 0.0f;
-        for (int col = tid; col &lt; cols; col += blockDim.x) {
-            thread_sum += row_data[col];
-        }
-        temp_storage[tid] = thread_sum;
-        __syncthreads();
-        
-        // Reduce within block
-        for (int stride = blockDim.x/2; stride &gt; 0; stride &gt;&gt;= 1) {
-            if (tid &lt; stride) {
-                temp_storage[tid] += temp_storage[tid + stride];
-            }
-            __syncthreads();
-        }
-        
-        float mean = temp_storage[0] / cols;
-        
-        // Compute variance using parallel reduction
-        thread_sum = 0.0f;
-        for (int col = tid; col &lt; cols; col += blockDim.x) {
-            float diff = row_data[col] - mean;
-            thread_sum += diff * diff;
-        }
-        temp_storage[tid] = thread_sum;
-        __syncthreads();
-        
-        // Reduce within block
-        for (int stride = blockDim.x/2; stride &gt; 0; stride &gt;&gt;= 1) {
-            if (tid &lt; stride) {
-                temp_storage[tid] += temp_storage[tid + stride];
-            }
-            __syncthreads();
-        }
-        
-        float variance = temp_storage[0] / cols;
-        float stddev = sqrtf(variance + 1e-5f);
+    // Store results back to global memory
+    if (i &lt; N) {
+        C[i] = S_A[threadId];
+    }
+    if (i + blockDim.x &lt; N) {
+        C[i + blockDim.x] = S_A[threadId + blockDim.x];
+    }
+    __syncthreads();
+}
 
-        // Normalize
-        for (int col = tid; col &lt; cols; col += blockDim.x) {
-            B[row * cols + col] = (row_data[col] - mean) / stddev;
-        }
+void checkHipError(const char* message) {
+    hipError_t error = hipGetLastError();
+    if (error != hipSuccess) {
+        printf("HIP error (%s): %s\n", message, hipGetErrorString(error));
+        exit(-1);
     }
 }
 
 int main() {
-    const int rows = 10, cols = 10;
-    float *A, *B;
+    const int N = 10;
+    float A[N], C[N];
 
-    // Allocate host memory
-    A = (float*)malloc(rows * cols * sizeof(float));
-    B = (float*)malloc(rows * cols * sizeof(float));
-
-    // Initialize input matrix with random values between 0 and 1
-    std::random_device rd;
-    std::mt19937 gen(rd());
-    std::uniform_real_distribution&lt;float&gt; dis(0.0f, 1.0f);
-    
-    for (int i = 0; i &lt; rows; i++) {
-        for (int j = 0; j &lt; cols; j++) {
-            A[i * cols + j] = dis(gen);
-        }
+    // Initialize input array
+    for (int i = 0; i &lt; N; i++) {
+        A[i] = i + 1.0f;
     }
+
+    // Print input array
+    printf("Input Array A:\n");
+    for (int i = 0; i &lt; N; i++) {
+        printf("%.2f ", A[i]);
+    }
+    printf("\n");
 
     // Allocate device memory
-    float *d_a, *d_b;
-    hipMalloc(&amp;d_a, rows * cols * sizeof(float));
-    hipMalloc(&amp;d_b, rows * cols * sizeof(float));
+    float *d_A, *d_C;
+    hipMalloc(&amp;d_A, N * sizeof(float));
+    hipMalloc(&amp;d_C, N * sizeof(float));
 
-    // Copy data to device
-    hipMemcpy(d_a, A, rows * cols * sizeof(float), hipMemcpyHostToDevice);
+    // Copy input data to device
+    hipMemcpy(d_A, A, N * sizeof(float), hipMemcpyHostToDevice);
+    checkHipError("Failed to copy input data to device");
 
     // Launch kernel
-    int threadsPerBlock = 32;  // Reduced thread count since we have small matrices
-    dim3 blockDim(threadsPerBlock);
-    dim3 gridDim(rows);  // One block per row
-    size_t shared_memory_size = (cols + threadsPerBlock) * sizeof(float);
+    dim3 dimBlock(16);  // Using 16 threads per block for this small example
+    dim3 dimGrid((N + dimBlock.x - 1) / dimBlock.x);
 
-    hipLaunchKernelGGL(LayerNorm,
-                       gridDim,
-                       blockDim,
-                       shared_memory_size, 0,
-                       d_a, d_b, rows, cols);
+    hipLaunchKernelGGL(prefixsum_kernel,
+                       dimGrid,
+                       dimBlock,
+                       0, 0,
+                       d_A, d_C, N);
     
-    // Synchronize device
+    checkHipError("Failed to execute the kernel");
     hipDeviceSynchronize();
 
-    // Copy result back to host
-    hipMemcpy(B, d_b, rows * cols * sizeof(float), hipMemcpyDeviceToHost);
+    // Copy results back to host
+    hipMemcpy(C, d_C, N * sizeof(float), hipMemcpyDeviceToHost);
+    checkHipError("Failed to copy output data to host");
 
     // Print results
-    printf("Input Matrix A:\n");
-    for (int i = 0; i &lt; rows; i++) {
-        for (int j = 0; j &lt; cols; j++) {
-            printf("%.4f ", A[i * cols + j]);
+    printf("\nPrefix Sum Results C:\n");
+    for (int i = 0; i &lt; N; i++) {
+        printf("%.2f ", C[i]);
+    }
+    printf("\n");
+
+    // Verify results
+    printf("\nVerification:\n");
+    float sum = 0.0f;
+    bool correct = true;
+    for (int i = 0; i &lt; N; i++) {
+        sum += A[i];
+        if (fabs(C[i] - sum) &gt; 1e-5) {
+            printf("Mismatch at position %d: expected %.2f, got %.2f\n", i, sum, C[i]);
+            correct = false;
         }
-        printf("\n");
+    }
+    if (correct) {
+        printf("All results match the expected values!\n");
     }
 
-    printf("\nNormalized Matrix B:\n");
-    for (int i = 0; i &lt; rows; i++) {
-        for (int j = 0; j &lt; cols; j++) {
-            printf("%.4f ", B[i * cols + j]);
-        }
-        printf("\n");
-    }
-
-    // Verify normalization (mean should be ~0, variance should be ~1)
-    for (int i = 0; i &lt; rows; i++) {
-        float row_mean = 0.0f;
-        float row_var = 0.0f;
-        
-        // Calculate mean
-        for (int j = 0; j &lt; cols; j++) {
-            row_mean += B[i * cols + j];
-        }
-        row_mean /= cols;
-        
-        // Calculate variance
-        for (int j = 0; j &lt; cols; j++) {
-            float diff = B[i * cols + j] - row_mean;
-            row_var += diff * diff;
-        }
-        row_var /= cols;
-        
-        printf("Row %d: Mean = %.6f, Variance = %.6f\n", i, row_mean, row_var);
-    }
-
-    // Free memory
-    hipFree(d_a);
-    hipFree(d_b);
-    free(A);
-    free(B);
+    // Cleanup
+    hipFree(d_A);
+    hipFree(d_C);
 
     return 0;
 } </code></pre>
     </div>
 
     <div class="file-section">
-        <h3>vector_matrix_mult.cpp</h3>
+        <h3>partial_sum.cpp</h3>
         <pre><code class="language-cpp">#include &lt;hip/hip_runtime.h&gt;
-#include &lt;iostream&gt;
+#include &lt;stdio.h&gt;
 
-__global__ void vectorMatrixMult(const float* A, const float* B, float* C, int N) {
-    int i = blockIdx.x * blockDim.x + threadIdx.x;
-    if (i &lt; N) {
-        float sum = 0.0f;
-        for (int j = 0; j &lt; N; j++) {
-            sum += A[i*N+j] * B[j];
+__global__ void partialSumKernel(int *input, int *output, int n) {
+    // Shared memory 
+    HIP_DYNAMIC_SHARED(int, sharedMemory);
+    
+    int tid = threadIdx.x;
+    int index = blockIdx.x * blockDim.x + tid;
+
+    if (index &lt; n/2) {  // Changed condition to handle half the array size
+        // Load input into shared memory and optimize the loading to do coalescing 
+        sharedMemory[tid] = input[2*index] + input[2*index + 1];
+        __syncthreads();
+
+        // Perform inclusive scan in shared memory
+        for (int stride = 1; stride &lt; blockDim.x; stride *= 2) {
+            int temp = 0;
+            if (tid &gt;= stride) {
+                temp = sharedMemory[tid - stride];
+            }
+            __syncthreads();
+            sharedMemory[tid] += temp;
+            __syncthreads();
         }
-        C[i] = sum;
+
+        // Write result to global memory
+        output[index] = sharedMemory[tid];
     }
 }
 
 int main() {
-    const int N = 10;
-    float *A, *B, *C;
+    const int N = 16;
+    const int blockSize = 8;
 
-    // Initialize the input arrays
-    A = (float *)malloc(N * N * sizeof(float));
-    B = (float *)malloc(N * sizeof(float));
-    C = (float *)malloc(N * sizeof(float));
+    int h_input[N] = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16};
+    int h_output[N/2];  // Changed size to N/2 as we're summing pairs
 
-    // Initialize matrices with values
-    for (int i = 0; i &lt; N; i++) {
-        for (int j = 0; j &lt; N; j++) {
-            A[i * N + j] = 1.0f;
-        }
-        B[i] = 2.0f;
-        C[i] = 0.0f;
-    }
+    int *d_input, *d_output;
+    size_t input_size = N * sizeof(int);
+    size_t output_size = (N/2) * sizeof(int);
 
-    float *d_a, *d_b, *d_c;
-    hipMalloc(&amp;d_a, N * N * sizeof(float));
-    hipMalloc(&amp;d_b, N * sizeof(float));
-    hipMalloc(&amp;d_c, N * sizeof(float));
+    hipMalloc(&amp;d_input, input_size);
+    hipMalloc(&amp;d_output, output_size);
 
-    hipMemcpy(d_a, A, N * N * sizeof(float), hipMemcpyHostToDevice);
-    hipMemcpy(d_b, B, N * sizeof(float), hipMemcpyHostToDevice);
+    hipMemcpy(d_input, h_input, input_size, hipMemcpyHostToDevice);
 
-    int blockSize = 256;
-    int gridSize = (N + blockSize - 1) / blockSize;  // Ceiling division
-    
     // Launch kernel using hipLaunchKernelGGL
-    hipLaunchKernelGGL(vectorMatrixMult,
-                       dim3(gridSize),
+    hipLaunchKernelGGL(partialSumKernel,
+                       dim3(1),  // Only need one block for this small example
                        dim3(blockSize),
-                       0, 0,
-                       d_a, d_b, d_c, N);
+                       blockSize * sizeof(int), 0,
+                       d_input, d_output, N);
     
     hipDeviceSynchronize();
 
-    hipMemcpy(C, d_c, N * sizeof(float), hipMemcpyDeviceToHost);
+    hipMemcpy(h_output, d_output, output_size, hipMemcpyDeviceToHost);
 
-    // Print matrix A
-    std::cout &lt;&lt; "A:\n";
+    printf("Input: ");
     for (int i = 0; i &lt; N; i++) {
-        for (int j = 0; j &lt; N; j++) {
-            printf("%.2f ", A[i * N + j]);
+        printf("%d ", h_input[i]);
+    }
+    printf("\nOutput (sum of adjacent pairs): ");
+    for (int i = 0; i &lt; N/2; i++) {
+        printf("%d ", h_output[i]);
+    }
+    printf("\n");
+
+    hipFree(d_input);
+    hipFree(d_output);
+
+    return 0;
+} </code></pre>
+    </div>
+
+    <div class="file-section">
+        <h3>matmul_rocblas.cpp</h3>
+        <pre><code class="language-cpp">#include &lt;hip/hip_runtime.h&gt;
+#include &lt;rocblas/rocblas.h&gt;
+#include &lt;iostream&gt;
+
+#define HIP_CHECK(call) do { \
+    hipError_t err = call; \
+    if (err != hipSuccess) { \
+        fprintf(stderr, "HIP error in %s:%d: %s\n", __FILE__, __LINE__, \
+                hipGetErrorString(err)); \
+        exit(EXIT_FAILURE); \
+    } \
+} while(0)
+
+#define ROCBLAS_CHECK(call) do { \
+    rocblas_status status = call; \
+    if (status != rocblas_status_success) { \
+        fprintf(stderr, "rocBLAS error in %s:%d: %d\n", __FILE__, __LINE__, \
+                static_cast&lt;int&gt;(status)); \
+        exit(EXIT_FAILURE); \
+    } \
+} while(0)
+
+void printMatrix(const char* name, float* matrix, int rows, int cols) {
+    std::cout &lt;&lt; name &lt;&lt; ":\n";
+    for (int i = 0; i &lt; rows; i++) {
+        for (int j = 0; j &lt; cols; j++) {
+            std::cout &lt;&lt; matrix[i * cols + j] &lt;&lt; " ";
         }
-        printf("\n");
+        std::cout &lt;&lt; "\n";
+    }
+    std::cout &lt;&lt; std::endl;
+}
+
+int main() {
+    rocblas_handle handle;
+    ROCBLAS_CHECK(rocblas_create_handle(&amp;handle));
+
+    int M = 2, N = 3, K = 4;
+    float *h_A, *h_B, *h_C;
+    h_A = new float[M * K];
+    h_B = new float[K * N];
+    h_C = new float[M * N];
+
+    // Initialize matrices
+    for (int i = 0; i &lt; M; i++) {
+        for (int j = 0; j &lt; K; j++) {
+            h_A[i * K + j] = i + j;
+        }
     }
 
-    // Print vector C (result)
-    std::cout &lt;&lt; "\nC:\n";
-    for (int i = 0; i &lt; N; i++) {
-        printf("%.2f ", C[i]);
+    for (int i = 0; i &lt; K; i++) {
+        for (int j = 0; j &lt; N; j++) {
+            h_B[i * N + j] = i + j;
+        }
     }
-    printf("\n");
 
-    // Print vector B
-    std::cout &lt;&lt; "\nB:\n";
-    for (int i = 0; i &lt; N; i++) {
-        printf("%.2f ", B[i]);
+    // Allocate device memory
+    float *d_A, *d_B, *d_C;
+    HIP_CHECK(hipMalloc(&amp;d_A, M * K * sizeof(float)));
+    HIP_CHECK(hipMalloc(&amp;d_B, K * N * sizeof(float)));
+    HIP_CHECK(hipMalloc(&amp;d_C, M * N * sizeof(float)));
+
+    // Copy matrices to device
+    HIP_CHECK(hipMemcpy(d_A, h_A, M * K * sizeof(float), hipMemcpyHostToDevice));
+    HIP_CHECK(hipMemcpy(d_B, h_B, K * N * sizeof(float), hipMemcpyHostToDevice));
+
+    // Set up and perform matrix multiplication: C = alpha*A*B + beta*C
+    const float alpha = 1.0f;
+    const float beta = 0.0f;
+
+    // Note: rocBLAS uses column-major order, so we transpose the operation
+    // C = A*B becomes C' = B'*A'
+    ROCBLAS_CHECK(rocblas_sgemm(handle,
+                               rocblas_operation_none,  // op(A) = A
+                               rocblas_operation_none,  // op(B) = B
+                               N, M, K,                 // m, n, k
+                               &amp;alpha,                  // alpha
+                               d_B, N,                  // B, ldb
+                               d_A, K,                  // A, lda
+                               &amp;beta,                   // beta
+                               d_C, N));               // C, ldc
+
+    // Copy result back to host
+    HIP_CHECK(hipMemcpy(h_C, d_C, M * N * sizeof(float), hipMemcpyDeviceToHost));
+
+    // Print matrices
+    printMatrix("Matrix A", h_A, M, K);
+    printMatrix("Matrix B", h_B, K, N);
+    
+    // Convert from column-major to row-major for printing
+    float* h_C_row = new float[M * N];
+    for (int i = 0; i &lt; M; i++) {
+        for (int j = 0; j &lt; N; j++) {
+            h_C_row[i * N + j] = h_C[j * M + i];
+        }
     }
-    printf("\n");
+    printMatrix("Matrix C = A * B", h_C_row, M, N);
 
     // Cleanup
-    hipFree(d_a);
-    hipFree(d_b);
-    hipFree(d_c);
-    free(A);
-    free(B);
-    free(C);
+    delete[] h_A;
+    delete[] h_B;
+    delete[] h_C;
+    delete[] h_C_row;
+    HIP_CHECK(hipFree(d_A));
+    HIP_CHECK(hipFree(d_B));
+    HIP_CHECK(hipFree(d_C));
+    ROCBLAS_CHECK(rocblas_destroy_handle(handle));
 
     return 0;
 } </code></pre>

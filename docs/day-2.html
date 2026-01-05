@@ -163,20 +163,19 @@
         <div class="description">
             <h2>Description</h2>
             <div class="desc-content">
-### File: `MatrixAdd.cu`
-**Summary:**  
-Worked on matrix addition using CUDA. Designed the grid and block layout to handle 2D matrices in parallel, with each element processed by an individual thread.  
-
-**Learned:**  
+<h3>File: <code>MatrixAdd.cu</code></h3>
+<p><strong>Summary:</strong><br />
+Worked on matrix addition using CUDA. Designed the grid and block layout to handle 2D matrices in parallel, with each element processed by an individual thread.  </p>
+<p><strong>Learned:</strong><br />
 - How to map 2D matrix data onto multiple threads.
-- Understanding thread indexing in 2D grids and blocks using `threadIdx`, `blockIdx`, `blockDim`, and `gridDim`.  
-- Synchronizing threads and avoiding race conditions when writing results to an output matrix.  
-
-### Reading:  
-- Read **Chapter 2** of the PMPP book.  
-  - Learned about scalability of GPUs, massive parallelism, and how to configure problem data to match GPU thread hierarchies.  
-
----
+- Understanding thread indexing in 2D grids and blocks using <code>threadIdx</code>, <code>blockIdx</code>, <code>blockDim</code>, and <code>gridDim</code>.<br />
+- Synchronizing threads and avoiding race conditions when writing results to an output matrix.  </p>
+<h3>Reading:</h3>
+<ul>
+<li>Read <strong>Chapter 2</strong> of the PMPP book.  </li>
+<li>Learned about scalability of GPUs, massive parallelism, and how to configure problem data to match GPU thread hierarchies.  </li>
+</ul>
+<hr />
             </div>
         </div>
         

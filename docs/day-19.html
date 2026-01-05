@@ -163,24 +163,23 @@
         <div class="description">
             <h2>Description</h2>
             <div class="desc-content">
-### File: `fcnet.cu`
-**Summary:**  
-Implemented a fully connected neural network (FCNet) using cuDNN in a CUDA program. This program utilizes the cuDNN library to perform forward passes through the network. The network consists of three layers: an input layer, two hidden layers, and an output layer. Each layer applies convolution, activation functions (ReLU), and includes bias terms.
-
-**Learned:**  
+<h3>File: <code>fcnet.cu</code></h3>
+<p><strong>Summary:</strong><br />
+Implemented a fully connected neural network (FCNet) using cuDNN in a CUDA program. This program utilizes the cuDNN library to perform forward passes through the network. The network consists of three layers: an input layer, two hidden layers, and an output layer. Each layer applies convolution, activation functions (ReLU), and includes bias terms.</p>
+<p><strong>Learned:</strong><br />
 - How to leverage cuDNN to construct and optimize neural networks effectively on the GPU.
 - Understanding of tensor descriptors, filter descriptors, and convolution descriptors, which are essential for defining the structure of the network.
 - The process for initializing weights using the cuRAND library to generate random numbers for model training.
 - Execution of the forward pass through the network with proper handling of data types, memory allocations, and error checking.
-- Importance of initializing and cleaning up CUDA and cuDNN resources to prevent memory leaks.
-
-### Code Overview:
-- Used `cudnnCreate`, `cudnnSetTensor4dDescriptor`, and related functions to define the structure of inputs, outputs, and weights.
-- Utilized convolution and activation layers to mimic the behavior of a feedforward neural network.
-- Implemented error checking macros (`CHECK_CUDA`, `CHECK_CUDNN`) to facilitate debugging of CUDA and cuDNN calls.
-- Conducted a simple forward training loop to process data; generated dummy input and label data for testing purposes.
-
----
+- Importance of initializing and cleaning up CUDA and cuDNN resources to prevent memory leaks.</p>
+<h3>Code Overview:</h3>
+<ul>
+<li>Used <code>cudnnCreate</code>, <code>cudnnSetTensor4dDescriptor</code>, and related functions to define the structure of inputs, outputs, and weights.</li>
+<li>Utilized convolution and activation layers to mimic the behavior of a feedforward neural network.</li>
+<li>Implemented error checking macros (<code>CHECK_CUDA</code>, <code>CHECK_CUDNN</code>) to facilitate debugging of CUDA and cuDNN calls.</li>
+<li>Conducted a simple forward training loop to process data; generated dummy input and label data for testing purposes.</li>
+</ul>
+<hr />
             </div>
         </div>
         

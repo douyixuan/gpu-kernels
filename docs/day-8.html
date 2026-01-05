@@ -163,72 +163,64 @@
         <div class="description">
             <h2>Description</h2>
             <div class="desc-content">
-### File: `prefixsum_brent_kung_algorithm.cu`  
-**Summary:**  
-Implemented the Brent-Kung algorithm for parallel prefix sum (scan) in CUDA, designing a work-efficient strategy to compute prefix sums across an array.  
-
-**Learned:**  
+<h3>File: <code>prefixsum_brent_kung_algorithm.cu</code></h3>
+<p><strong>Summary:</strong><br />
+Implemented the Brent-Kung algorithm for parallel prefix sum (scan) in CUDA, designing a work-efficient strategy to compute prefix sums across an array.  </p>
+<p><strong>Learned:</strong><br />
 - The fundamentals of hierarchical parallel scan algorithms and the Brent-Kung approach for work efficiency.
-- How to divide the scan operation into an **up-sweep (reduce)** phase and a **down-sweep** phase using shared memory for efficient computation.  
-- Optimized thread synchronization and memory usage for large input arrays.  
-
-### Reading:  
-- Read **Chapter 8** of the PMPP book.  
-  - Learned about different parallel patterns for prefix sum computation, focusing on performance, memory access efficiency, and work-efficient algorithms like hierarchical scans.  
-- Read **Chapter 9** of the PMPP book.  
-  - Learned about different parallel patterns for Parallel Histogram Computation, focusing on Atomic Operations,  Interleaved Partitioning, Privatization and Aggregation.  
-
-### Day 9  
-
-### File: `flash_attention_forward.cu`  
-**Summary:**  
-Implemented a forward pass for Flash Attention in CUDA, based on the Flash Attention paper. The code is still a work in progress and might produce incorrect results. A refined and fully functional version will be updated in the coming days.  
-
-**Learned:**  
-- Explored the fundamentals of Flash Attention, including its memory-efficient mechanism for attention computation.  
-- Gained insights into optimizing CUDA kernels for operations like softmax and scaling factors used in attention.  
-- Identified potential challenges in achieving numerical stability and correctness when implementing complex attention mechanisms.  
-
-### Reading:  
-- Read the **Flash Attention paper**.  
-  - Learned about the key concepts of reducing memory overhead in attention computation, streamlining the matrix multiplication process, and ensuring efficient scaling for large models.
-
-
-### Day 10:
-### File: `flash_attention_forward.cu` 
-Optimized and corrected yesterday's forward pass for Flash Attention in CUDA, based on the Flash Attention paper. The code is still a work in progress!
-
-### File: `torch_test.py` 
-Torch code to check the results of flash_attention_forward kernel.
-
-### Blog: `Understanding Flash Attention (Forward) with CUDA`
-A blog on flash attention (forward algorithm) explaining the parts of my code. I'll try to make it more intuitive with drawings as soon as I have time.
-
-### Day 11
-### File: `sparse_MatrixVecMult_Hybrid_ELL_COO.cu`
-**Summary:**  
-Completed the implementation of a highly optimized sparse matrix-vector multiplication (SpMV) algorithm using a hybrid approach that combines ELL (Ellpack) and COO (Coordinate) formats. This implementation focuses on minimizing memory overhead while maximizing computational efficiency across the sparsity of the input matrix.
-
-**Learned:**  
+- How to divide the scan operation into an <strong>up-sweep (reduce)</strong> phase and a <strong>down-sweep</strong> phase using shared memory for efficient computation.<br />
+- Optimized thread synchronization and memory usage for large input arrays.  </p>
+<h3>Reading:</h3>
+<ul>
+<li>Read <strong>Chapter 8</strong> of the PMPP book.  </li>
+<li>Learned about different parallel patterns for prefix sum computation, focusing on performance, memory access efficiency, and work-efficient algorithms like hierarchical scans.  </li>
+<li>Read <strong>Chapter 9</strong> of the PMPP book.  </li>
+<li>Learned about different parallel patterns for Parallel Histogram Computation, focusing on Atomic Operations,  Interleaved Partitioning, Privatization and Aggregation.  </li>
+</ul>
+<h3>Day 9</h3>
+<h3>File: <code>flash_attention_forward.cu</code></h3>
+<p><strong>Summary:</strong><br />
+Implemented a forward pass for Flash Attention in CUDA, based on the Flash Attention paper. The code is still a work in progress and might produce incorrect results. A refined and fully functional version will be updated in the coming days.  </p>
+<p><strong>Learned:</strong><br />
+- Explored the fundamentals of Flash Attention, including its memory-efficient mechanism for attention computation.<br />
+- Gained insights into optimizing CUDA kernels for operations like softmax and scaling factors used in attention.<br />
+- Identified potential challenges in achieving numerical stability and correctness when implementing complex attention mechanisms.  </p>
+<h3>Reading:</h3>
+<ul>
+<li>Read the <strong>Flash Attention paper</strong>.  </li>
+<li>Learned about the key concepts of reducing memory overhead in attention computation, streamlining the matrix multiplication process, and ensuring efficient scaling for large models.</li>
+</ul>
+<h3>Day 10:</h3>
+<h3>File: <code>flash_attention_forward.cu</code></h3>
+<p>Optimized and corrected yesterday's forward pass for Flash Attention in CUDA, based on the Flash Attention paper. The code is still a work in progress!</p>
+<h3>File: <code>torch_test.py</code></h3>
+<p>Torch code to check the results of flash_attention_forward kernel.</p>
+<h3>Blog: <code>Understanding Flash Attention (Forward) with CUDA</code></h3>
+<p>A blog on flash attention (forward algorithm) explaining the parts of my code. I'll try to make it more intuitive with drawings as soon as I have time.</p>
+<h3>Day 11</h3>
+<h3>File: <code>sparse_MatrixVecMult_Hybrid_ELL_COO.cu</code></h3>
+<p><strong>Summary:</strong><br />
+Completed the implementation of a highly optimized sparse matrix-vector multiplication (SpMV) algorithm using a hybrid approach that combines ELL (Ellpack) and COO (Coordinate) formats. This implementation focuses on minimizing memory overhead while maximizing computational efficiency across the sparsity of the input matrix.</p>
+<p><strong>Learned:</strong><br />
 - Explored the principles and benefits of different sparse matrix representations, namely ELL and COO formats.
 - Implemented hybrid techniques to optimize performance by balancing memory access patterns and ensuring efficient data locality.
-- Benchmarked the performance of the CUDA implementation against PyTorch to evaluate the efficiency and correctness of the optimized SpMV algorithm.
-
-### Reading:  
-- Completed **Chapter 10** of the PMPP book.  
-  - Gained insights into parallel patterns for sparse matrix computations, focusing on the background of sparse data handling, parallel SpMV using CSR formats, and padding and transposition techniques for optimization.  
-  - Learned about utilizing hybrid approaches to manage padding effectively and methods for sorting and partitioning to enhance regularization in sparse data.
-
-### File: `benchmark.py`
-**Summary:**  
-Developed a benchmarking script to evaluate the performance of the custom CUDA SpMV implementation against PyTorch's built-in functions. This benchmark facilitates comparative analysis of execution times and ensures that the implementation meets expected performance standards.
-
-### Blog:  
-- Wrote a blog post titled **"Learning CUDA with a Weak GPU or No GPU at All: Yes, You Can!"**  
-  - Addressed common misconceptions regarding GPU programming and provided practical tips for learners with limited hardware resources. The blog offers insights on optimizing CPU-based implementations and highlights methods to learn CUDA fundamentals without direct access to a powerful GPU.
-
-**Link to Blog:**  
-[Learning CUDA with a Weak GPU or No GPU at All: Yes, You Can!](https://hamdi.bearblog.dev/learning-cuda-with-a-weak-gpu-or-no-gpu-at-all-yes-you-can/)
+- Benchmarked the performance of the CUDA implementation against PyTorch to evaluate the efficiency and correctness of the optimized SpMV algorithm.</p>
+<h3>Reading:</h3>
+<ul>
+<li>Completed <strong>Chapter 10</strong> of the PMPP book.  </li>
+<li>Gained insights into parallel patterns for sparse matrix computations, focusing on the background of sparse data handling, parallel SpMV using CSR formats, and padding and transposition techniques for optimization.  </li>
+<li>Learned about utilizing hybrid approaches to manage padding effectively and methods for sorting and partitioning to enhance regularization in sparse data.</li>
+</ul>
+<h3>File: <code>benchmark.py</code></h3>
+<p><strong>Summary:</strong><br />
+Developed a benchmarking script to evaluate the performance of the custom CUDA SpMV implementation against PyTorch's built-in functions. This benchmark facilitates comparative analysis of execution times and ensures that the implementation meets expected performance standards.</p>
+<h3>Blog:</h3>
+<ul>
+<li>Wrote a blog post titled <strong>"Learning CUDA with a Weak GPU or No GPU at All: Yes, You Can!"</strong>  </li>
+<li>Addressed common misconceptions regarding GPU programming and provided practical tips for learners with limited hardware resources. The blog offers insights on optimizing CPU-based implementations and highlights methods to learn CUDA fundamentals without direct access to a powerful GPU.</li>
+</ul>
+<p><strong>Link to Blog:</strong><br />
+<a href="https://hamdi.bearblog.dev/learning-cuda-with-a-weak-gpu-or-no-gpu-at-all-yes-you-can/">Learning CUDA with a Weak GPU or No GPU at All: Yes, You Can!</a></p>
             </div>
         </div>
         

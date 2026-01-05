@@ -163,9 +163,8 @@
         <div class="description">
             <h2>Description</h2>
             <div class="desc-content">
-### Files: `spba_multi_gpu.cpp`
-
-I implemented a multi-GPU Single-Parameter Bees Algorithm (SPBA) using HIP, which leverages parallel GPU execution to evaluate candidate solutions concurrently. In this implementation, the algorithm optimizes a test function (Sphere function) by iteratively refining a population of candidate solutions. A single parameter (α) controls the perturbation magnitude during local search, striking a balance between exploration and exploitation. HIP kernels perform the heavy lifting by calculating objective values in parallel across multiple GPUs, while the CPU orchestrates the selection, local search, and global random search steps. This approach makes the algorithm highly scalable and efficient for large-scale optimization tasks on systems equipped with many GPUs.
+<h3>Files: <code>spba_multi_gpu.cpp</code></h3>
+<p>I implemented a multi-GPU Single-Parameter Bees Algorithm (SPBA) using HIP, which leverages parallel GPU execution to evaluate candidate solutions concurrently. In this implementation, the algorithm optimizes a test function (Sphere function) by iteratively refining a population of candidate solutions. A single parameter (α) controls the perturbation magnitude during local search, striking a balance between exploration and exploitation. HIP kernels perform the heavy lifting by calculating objective values in parallel across multiple GPUs, while the CPU orchestrates the selection, local search, and global random search steps. This approach makes the algorithm highly scalable and efficient for large-scale optimization tasks on systems equipped with many GPUs.</p>
             </div>
         </div>
         

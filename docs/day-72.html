@@ -163,9 +163,8 @@
         <div class="description">
             <h2>Description</h2>
             <div class="desc-content">
-### Files: `dyt.cu`
-
-I implemented the DyT (Dynamic Tanh) operation in a standalone CUDA C++ file (`dyt.cu`) without using any external frameworks. The implementation includes both the forward pass and the backward pass, which computes the gradients using atomic operations to safely accumulate values across threads. Memory allocation, data transfers, and kernel launches are manually managed, and a `main` function is provided to test the kernels by processing sample data and printing the results.
+<h3>Files: <code>dyt.cu</code></h3>
+<p>I implemented the DyT (Dynamic Tanh) operation in a standalone CUDA C++ file (<code>dyt.cu</code>) without using any external frameworks. The implementation includes both the forward pass and the backward pass, which computes the gradients using atomic operations to safely accumulate values across threads. Memory allocation, data transfers, and kernel launches are manually managed, and a <code>main</code> function is provided to test the kernels by processing sample data and printing the results.</p>
             </div>
         </div>
         

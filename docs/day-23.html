@@ -163,25 +163,29 @@
         <div class="description">
             <h2>Description</h2>
             <div class="desc-content">
-### File: `swiglu.cu`
-**Summary:**  
-Implemented the SwiGLU (Swish-Gated Linear Unit) activation function in CUDA. This kernel computes the activation function in a parallelized manner, enhancing the performance of neural network models that utilize the SwiGLU activation. The implementation focuses on efficient computation and memory access patterns to optimize performance on CUDA-capable GPUs.
-
-**Key Components:**
-1. **Kernel Function:**  
-   - The `swiglu_kernel` computes the SwiGLU output by first performing matrix multiplications with weight matrices `W1` and `W2`, followed by applying the sigmoid function to the results. This approach allows the kernel to compute the outputs for multiple batches and dimensions concurrently.
-
-2. **Memory Management:**  
-   - Memory allocation and deallocation on the GPU are managed using `cudaMalloc` and `cudaFree`, ensuring efficient usage of GPU resources. Input matrices are copied to the device memory using `cudaMemcpy`.
-
-3. **Debugging Information:**  
-   - Added debugging print statements within the GPU kernel to help verify correctness for the initial output values. This assists in tracking computations and identifying potential issues during development.
-
-4. **Manual Verification:**  
-   - Performed manual computations for the first output element on the CPU to verify the correctness of the CUDA implementation against expectations, ensuring the output matches the sequential computation results.
-
-
----
+<h3>File: <code>swiglu.cu</code></h3>
+<p><strong>Summary:</strong><br />
+Implemented the SwiGLU (Swish-Gated Linear Unit) activation function in CUDA. This kernel computes the activation function in a parallelized manner, enhancing the performance of neural network models that utilize the SwiGLU activation. The implementation focuses on efficient computation and memory access patterns to optimize performance on CUDA-capable GPUs.</p>
+<p><strong>Key Components:</strong>
+1. <strong>Kernel Function:</strong><br />
+   - The <code>swiglu_kernel</code> computes the SwiGLU output by first performing matrix multiplications with weight matrices <code>W1</code> and <code>W2</code>, followed by applying the sigmoid function to the results. This approach allows the kernel to compute the outputs for multiple batches and dimensions concurrently.</p>
+<ol>
+<li><strong>Memory Management:</strong>  </li>
+<li>
+<p>Memory allocation and deallocation on the GPU are managed using <code>cudaMalloc</code> and <code>cudaFree</code>, ensuring efficient usage of GPU resources. Input matrices are copied to the device memory using <code>cudaMemcpy</code>.</p>
+</li>
+<li>
+<p><strong>Debugging Information:</strong>  </p>
+</li>
+<li>
+<p>Added debugging print statements within the GPU kernel to help verify correctness for the initial output values. This assists in tracking computations and identifying potential issues during development.</p>
+</li>
+<li>
+<p><strong>Manual Verification:</strong>  </p>
+</li>
+<li>Performed manual computations for the first output element on the CPU to verify the correctness of the CUDA implementation against expectations, ensuring the output matches the sequential computation results.</li>
+</ol>
+<hr />
             </div>
         </div>
         

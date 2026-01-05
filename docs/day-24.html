@@ -163,12 +163,10 @@
         <div class="description">
             <h2>Description</h2>
             <div class="desc-content">
-### File: `atomicAddLL.cu`
-
-**Summary:**  
-Implemented and tested a custom atomic addition (`atomicAddLL`) function for 64-bit integers (long long) in CUDA. This implementation leverages the `atomicCAS` (compare-and-swap) operation to ensure thread safety when multiple threads attempt to update the same memory location concurrently. The kernel accumulates thread indices into a shared `long long` variable using the `atomicAddLL` function.
-
----
+<h3>File: <code>atomicAddLL.cu</code></h3>
+<p><strong>Summary:</strong><br />
+Implemented and tested a custom atomic addition (<code>atomicAddLL</code>) function for 64-bit integers (long long) in CUDA. This implementation leverages the <code>atomicCAS</code> (compare-and-swap) operation to ensure thread safety when multiple threads attempt to update the same memory location concurrently. The kernel accumulates thread indices into a shared <code>long long</code> variable using the <code>atomicAddLL</code> function.</p>
+<hr />
             </div>
         </div>
         
