@@ -294,7 +294,7 @@ Today, I implemented vector addition using the cuBLAS library in CUDA. By levera
 
     <div class="file-section">
         <h3>cmpFHD.cu</h3>
-        <pre><code class="language-cuda">#include &lt;cuda_runtime.h&gt;
+        <pre><code class="language-cpp">#include &lt;cuda_runtime.h&gt;
 #include &lt;math.h&gt;
 #include &lt;stdio.h&gt;
 #include &lt;random&gt;
@@ -444,7 +444,7 @@ int main() {
 
     <div class="file-section">
         <h3>cmpFHd_real_image.cu</h3>
-        <pre><code class="language-cuda">/*
+        <pre><code class="language-cpp">/*
 nvcc cmpFHd_real_image.cu -o cmpFHd_real_image `pkg-config --cflags --libs opencv4`
 
 and don't forget to put the image file in the same directory.

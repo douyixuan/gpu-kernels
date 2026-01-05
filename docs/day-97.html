@@ -173,7 +173,7 @@ The optimizations include: float4 loads for FP32 tails, __half2 vectorized ELU f
 
     <div class="file-section">
         <h3>elu_optim.cu</h3>
-        <pre><code class="language-cuda">// To optimize the code I used: float4 loads for FP32 tail, __half2 vectorized ELU for even-index FP16, branchless, FMA, __exp2f for faster exp
+        <pre><code class="language-cpp">// To optimize the code I used: float4 loads for FP32 tail, __half2 vectorized ELU for even-index FP16, branchless, FMA, __exp2f for faster exp
 
 #include &lt;cuda_fp16.h&gt;
 #include &lt;cuda_runtime.h&gt;

@@ -183,7 +183,7 @@ Worked on parallel reduction to compute the partial sum of an array. Implemented
 
     <div class="file-section">
         <h3>partialSum.cu</h3>
-        <pre><code class="language-cuda">#include &lt;stdio.h&gt;
+        <pre><code class="language-cpp">#include &lt;stdio.h&gt;
 
 __global__ void partialSumKernel(int *input, int *output, int n) {
     // Shared memory 

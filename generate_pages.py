@@ -64,11 +64,12 @@ def get_day_files(day_num: int) -> List[Tuple[str, str]]:
 def get_language(filename: str) -> str:
     """Get Prism.js language identifier from filename."""
     ext_map = {
-        '.cu': 'cuda',
+        # Map CUDA source files to C++ highlighting for Prism
+        '.cu': 'cpp',
         '.cpp': 'cpp',
         '.c': 'c',
         '.h': 'c',
-        '.cuh': 'cuda',
+        '.cuh': 'cpp',
         '.py': 'python',
         '.md': 'markdown'
     }

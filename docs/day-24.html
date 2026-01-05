@@ -174,7 +174,7 @@ Implemented and tested a custom atomic addition (<code>atomicAddLL</code>) funct
 
     <div class="file-section">
         <h3>atomicAddLL.cu</h3>
-        <pre><code class="language-cuda">#include &lt;stdio.h&gt;
+        <pre><code class="language-cpp">#include &lt;stdio.h&gt;
 
 __device__ long long atomicAddLL(long long *addr, long long val) {
     unsigned long long *uaddr = (unsigned long long *)addr;

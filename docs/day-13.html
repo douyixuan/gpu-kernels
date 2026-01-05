@@ -276,7 +276,7 @@ int main() {
 
     <div class="file-section">
         <h3>Bfs/bfs_gpu.cu</h3>
-        <pre><code class="language-cuda">#include "bfs.h"
+        <pre><code class="language-cpp">#include "bfs.h"
 #include "bfs_kernel.cu"
 
 /*
@@ -361,7 +361,7 @@ void cpu_bfs(int source, int num_vertices, int num_edges, int* edges, int* dest,
 
     <div class="file-section">
         <h3>Bfs/bfs_kernel.cu</h3>
-        <pre><code class="language-cuda">#include "bfs.h"
+        <pre><code class="language-cpp">#include "bfs.h"
 
 __global__ void bfs_kernel(int level, int num_vertices, int* edges, int* dest, int* labels, int* done) {
     int tid = blockDim.x * blockIdx.x + threadIdx.x;
@@ -579,7 +579,7 @@ void checkCublasStatus(cublasStatus_t status);
 
     <div class="file-section">
         <h3>Linear_kernel/linear_kernel.cu</h3>
-        <pre><code class="language-cuda">#include "helper_functions.h"
+        <pre><code class="language-cpp">#include "helper_functions.h"
 #include "cuda_kernels.h"
 
 int main() {
@@ -705,7 +705,7 @@ nvcc linear_kernel.cu helper_functions.cpp cuda_kernels.cu -lcublas -o linear_la
 
     <div class="file-section">
         <h3>Linear_kernel/cuda_kernels.cu</h3>
-        <pre><code class="language-cuda">#include "cuda_kernels.h"
+        <pre><code class="language-cpp">#include "cuda_kernels.h"
 #include "helper_functions.h"
 
 __global__ void addBiasKernel(float* output, const float* bias, int batch_size, int output_features) {
@@ -761,7 +761,7 @@ void performLinearLayerOperation(
 
     <div class="file-section">
         <h3>Gelu/glu.cu</h3>
-        <pre><code class="language-cuda">#include &lt;stdio.h&gt;
+        <pre><code class="language-cpp">#include &lt;stdio.h&gt;
 #include &lt;stdlib.h&gt;
 #include &lt;cuda.h&gt;
 #include &lt;iostream&gt;

@@ -183,7 +183,7 @@ Implemented vector addition by writing a simple CUDA program. Explored how to la
 
     <div class="file-section">
         <h3>vectAdd.cu</h3>
-        <pre><code class="language-cuda">#include &lt;iostream&gt;
+        <pre><code class="language-cpp">#include &lt;iostream&gt;
 
 __global__ void vectorAdd(const float* A, const float* B, float* C, int N) {
     int i = blockIdx.x * blockDim.x + threadIdx.x;

@@ -201,7 +201,7 @@ Implemented a 2D convolution algorithm with tiling optimization using CUDA. Divi
 
     <div class="file-section">
         <h3>one_d_convolution.cu</h3>
-        <pre><code class="language-cuda">#include &lt;iostream&gt;
+        <pre><code class="language-cpp">#include &lt;iostream&gt;
 #include &lt;cuda_runtime.h&gt;
 #define Mask_width 5  
 __constant__ float M[Mask_width];
@@ -297,7 +297,7 @@ checkCudaError("Failed to copy output data to host");
 
     <div class="file-section">
         <h3>2d_convolution_with_tiling.cu</h3>
-        <pre><code class="language-cuda">#include &lt;stdio.h&gt;
+        <pre><code class="language-cpp">#include &lt;stdio.h&gt;
 #include &lt;iostream&gt;
 
 // I'm assuming that the mask and the matrix to be square for simplicity
@@ -441,7 +441,7 @@ int main() {
 
     <div class="file-section">
         <h3>one_d_convolution_with_tiling.cu</h3>
-        <pre><code class="language-cuda">#include &lt;iostream&gt;
+        <pre><code class="language-cpp">#include &lt;iostream&gt;
 #include &lt;cuda_runtime.h&gt;
 #define Mask_width 5  
 __constant__ float M[Mask_width];

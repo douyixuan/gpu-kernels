@@ -171,7 +171,7 @@
 
     <div class="file-section">
         <h3>flash_attention_backprop/kernels.cuh</h3>
-        <pre><code class="language-cuda">#ifndef KERNELS_CUH
+        <pre><code class="language-cpp">#ifndef KERNELS_CUH
 #define KERNELS_CUH
 
 __global__ void computeDKernel(const float* dO, const float* O, float* D, int N, int d);
@@ -198,7 +198,7 @@ __global__ void computeGradientsKernel(const float* dO, float* dQ, float* dK, fl
 
     <div class="file-section">
         <h3>flash_attention_backprop/helper.cuh</h3>
-        <pre><code class="language-cuda">#ifndef HELPER_CUH
+        <pre><code class="language-cpp">#ifndef HELPER_CUH
 #define HELPER_CUH
 
 __device__ float warpReduceMax(float val);
@@ -209,7 +209,7 @@ __device__ float warpReduceMax(float val);
 
     <div class="file-section">
         <h3>flash_attention_backprop/helper.cu</h3>
-        <pre><code class="language-cuda">#include &lt;cuda_runtime.h&gt;
+        <pre><code class="language-cpp">#include &lt;cuda_runtime.h&gt;
 #include &lt;math.h&gt;
 #include "helper.cuh"
 
@@ -224,7 +224,7 @@ __device__ float warpReduceMax(float val) {
 
     <div class="file-section">
         <h3>flash_attention_backprop/kernels.cu</h3>
-        <pre><code class="language-cuda">#include &lt;cuda_runtime.h&gt;
+        <pre><code class="language-cpp">#include &lt;cuda_runtime.h&gt;
 #include &lt;math.h&gt;
 #include "kernels.cuh"
 
@@ -380,7 +380,7 @@ __global__ void accumulateDKVjKernel(float* dK, float* dV, const float* dKj_temp
 
     <div class="file-section">
         <h3>flash_attention_backprop/flash.cu</h3>
-        <pre><code class="language-cuda">#include &lt;cuda_runtime.h&gt;
+        <pre><code class="language-cpp">#include &lt;cuda_runtime.h&gt;
 #include &lt;stdio.h&gt;
 #include &lt;stdlib.h&gt;
 #include &lt;math.h&gt;
@@ -517,7 +517,7 @@ void flashAttention2BackwardPass(const float* Q, const float* K, const float* V,
 
     <div class="file-section">
         <h3>Cnn/cnn.cu</h3>
-        <pre><code class="language-cuda">#include &lt;cuda_runtime.h&gt;
+        <pre><code class="language-cpp">#include &lt;cuda_runtime.h&gt;
 #include &lt;iostream&gt;
 #include &lt;cmath&gt;
 #include &lt;cstdlib&gt;
